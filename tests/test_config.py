@@ -45,6 +45,32 @@ def test_oauth_json_used_when_env_credentials_missing(monkeypatch, tmp_path):
     assert settings.oauth_client_source == str(key_file)
 
 
+def test_oauth_json_path_expands_environment_variables(monkeypatch, tmp_path):
+    key_file = tmp_path / "gcp-oauth.keys.json"
+    key_file.write_text(
+        json.dumps(
+            {
+                "web": {
+                    "client_id": "json-client",
+                    "client_secret": "json-secret",
+                    "redirect_uris": ["http://localhost:8787/callback"],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GOOGLE_TASKS_TEST_DIR", str(tmp_path))
+    monkeypatch.setenv("GOOGLE_OAUTH_KEYS_PATH", "%GOOGLE_TASKS_TEST_DIR%/gcp-oauth.keys.json")
+    monkeypatch.setenv("MCP_BEARER_TOKEN", "bearer-token")
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "test.db"))
+    reset_settings_cache()
+
+    settings = get_settings()
+
+    assert settings.google_client_id == "json-client"
+    assert settings.oauth_client_source == str(key_file)
+
+
 def test_env_credentials_take_precedence_over_oauth_json(monkeypatch, tmp_path):
     key_file = tmp_path / "gcp-oauth.keys.json"
     key_file.write_text(

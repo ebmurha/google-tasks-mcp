@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -16,6 +17,7 @@ from .errors import ConfigError
 
 DEFAULT_DB_PATH = "/var/lib/google-tasks-mcp/google-tasks.db"
 DEFAULT_OAUTH_KEYS_PATH = "gcp-oauth.keys.json"
+WINDOWS_ENV_VAR_PATTERN = re.compile(r"%([^%]+)%")
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,15 @@ def _clean(value: str | None) -> str | None:
         return None
     value = value.strip()
     return value or None
+
+
+def _expand_path(value: str) -> Path:
+    expanded = os.path.expanduser(os.path.expandvars(value))
+    expanded = WINDOWS_ENV_VAR_PATTERN.sub(
+        lambda match: os.environ.get(match.group(1), match.group(0)),
+        expanded,
+    )
+    return Path(expanded)
 
 
 def _read_oauth_keys(path: Path) -> OAuthClientInfo | None:
@@ -110,9 +121,9 @@ def _parse_port(value: str | None) -> int:
 
 @lru_cache(maxsize=2)
 def get_settings(*, require_bearer_token: bool = False) -> Settings:
-    load_dotenv(override=False)
+    load_dotenv(dotenv_path=Path.cwd() / ".env", override=False)
 
-    oauth_keys_path = Path(os.getenv("GOOGLE_OAUTH_KEYS_PATH", DEFAULT_OAUTH_KEYS_PATH))
+    oauth_keys_path = _expand_path(_clean(os.getenv("GOOGLE_OAUTH_KEYS_PATH")) or DEFAULT_OAUTH_KEYS_PATH)
     file_client = _read_oauth_keys(oauth_keys_path)
 
     env_client_id = _clean(os.getenv("GOOGLE_CLIENT_ID"))
@@ -147,7 +158,7 @@ def get_settings(*, require_bearer_token: bool = False) -> Settings:
         google_client_secret=client_secret,
         google_redirect_uri=_required("GOOGLE_REDIRECT_URI", redirect_uri),
         mcp_bearer_token=bearer_token,
-        db_path=Path(_clean(os.getenv("DB_PATH")) or DEFAULT_DB_PATH),
+        db_path=_expand_path(_clean(os.getenv("DB_PATH")) or DEFAULT_DB_PATH),
         bind_host=_clean(os.getenv("BIND_HOST")) or "127.0.0.1",
         bind_port=_parse_port(os.getenv("BIND_PORT")),
         log_level=(_clean(os.getenv("LOG_LEVEL")) or "INFO").upper(),

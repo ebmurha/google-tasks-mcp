@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import time
 from datetime import timezone
+from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from google.auth.exceptions import GoogleAuthError, RefreshError
 from google.auth.transport.requests import Request
@@ -19,6 +21,43 @@ SCOPES = ("https://www.googleapis.com/auth/tasks",)
 REFRESH_BUFFER_SECONDS = 60
 
 
+def _oauth_error_message(exc: Exception) -> str:
+    details: list[str] = []
+    for attr in ("error", "description", "status_code"):
+        value = getattr(exc, attr, None)
+        if value:
+            details.append(f"{attr}={value}")
+
+    response = getattr(exc, "response", None)
+    if response is not None:
+        status_code = getattr(response, "status_code", None)
+        if status_code:
+            details.append(f"status_code={status_code}")
+        try:
+            body: Any = response.json()
+        except ValueError:
+            body = None
+        if isinstance(body, dict):
+            for key in ("error", "error_description"):
+                value = body.get(key)
+                if value:
+                    details.append(f"{key}={value}")
+
+    if not details:
+        return "OAuth code exchange failed; run bootstrap again"
+    return "OAuth code exchange failed; " + "; ".join(details)
+
+
+def _extract_code(value: str) -> str:
+    value = value.strip()
+    parsed = urlparse(value)
+    if parsed.query:
+        code = parse_qs(parsed.query).get("code", [""])[0]
+        if code:
+            return code.strip()
+    return value
+
+
 def _build_flow(settings: Settings | None = None) -> Flow:
     settings = settings or get_settings()
     flow = Flow.from_client_config(settings.client_config(), scopes=list(SCOPES))
@@ -26,8 +65,12 @@ def _build_flow(settings: Settings | None = None) -> Flow:
     return flow
 
 
-def authorization_url() -> str:
-    flow = _build_flow()
+def build_authorization_flow(settings: Settings | None = None) -> Flow:
+    return _build_flow(settings)
+
+
+def authorization_url(flow: Flow | None = None) -> str:
+    flow = flow or _build_flow()
     url, _state = flow.authorization_url(
         access_type="offline",
         prompt="consent",
@@ -42,16 +85,16 @@ def _expiry_epoch(credentials: Credentials) -> int:
     return int(credentials.expiry.replace(tzinfo=timezone.utc).timestamp())
 
 
-def exchange_code(code: str) -> db.Token:
-    code = code.strip()
+def exchange_code(code: str, *, flow: Flow | None = None) -> db.Token:
+    code = _extract_code(code)
     if not code:
         raise AuthRequired("No OAuth code was provided")
 
-    flow = _build_flow()
+    flow = flow or _build_flow()
     try:
         flow.fetch_token(code=code)
     except Exception as exc:  # google-auth-oauthlib raises requests/oauthlib errors.
-        raise AuthRequired("OAuth code exchange failed; run bootstrap again") from exc
+        raise AuthRequired(_oauth_error_message(exc)) from exc
 
     credentials = flow.credentials
     if not credentials.refresh_token:

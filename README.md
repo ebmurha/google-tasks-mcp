@@ -14,6 +14,9 @@ pip install -e .
 cp .env.example .env   # set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, MCP_BEARER_TOKEN
 ```
 
+Generate `MCP_BEARER_TOKEN` with `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
+Use it on HTTP MCP requests as `Authorization: Bearer <token>`.
+
 Bootstrap OAuth (once):
 
 ```bash
@@ -71,14 +74,45 @@ Cross-list `move` is emulated via insert + delete. The moved task gets a new Goo
 ## Google Cloud setup
 
 1. Create a project → enable the **Google Tasks API** → configure the OAuth consent screen.
-2. Create an **OAuth 2.0 Client ID** → add your callback URL as an authorized redirect URI.
-3. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in `.env`.
+2. Create an **OAuth 2.0 Client ID**.
 
-Use `http://localhost:8787/callback` for local installs. Use `https://your-domain.example/callback` for remote servers.
+**Recommended: Web application**
+
+- Use this for normal local, VPS, Docker, and other server-style installs.
+- Add the exact callback URL to **Authorized redirect URIs**.
+- For local installs, use `http://127.0.0.1:8787/callback`.
+- For remote servers, use `https://your-domain.example/callback`.
+- Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in `.env`.
+- `GOOGLE_REDIRECT_URI` must exactly match one of the authorized redirect URIs.
+
+Example `.env` values for a local Web application OAuth client:
+
+```env
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_REDIRECT_URI=http://127.0.0.1:8787/callback
+```
+
+**Local-only alternative: Desktop app**
+
+- Choose **Desktop app** as the OAuth client application type.
+- Use this only for a personal local install where the app runs on your own machine.
+- Download the client JSON, store it outside the repo, and point `GOOGLE_OAUTH_KEYS_PATH` to the file.
+- You may leave `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` empty when using the JSON file.
+- You may omit `GOOGLE_REDIRECT_URI` if the JSON contains `redirect_uris`; otherwise set it to one of the JSON file's redirect URIs.
+
+Example `.env` values for a Desktop app OAuth client:
+
+```env
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=
+GOOGLE_OAUTH_KEYS_PATH=/home/you/.config/google-tasks-mcp/gcp-oauth.keys.json
+```
+
+The repo-root fallback name `gcp-oauth.keys.json` is supported for convenience, but keeping OAuth credential JSON outside the repo is preferred.
 
 If the consent screen is in testing mode, add your Google account as a test user or refresh tokens will expire after 7 days.
-
-Alternatively, place the downloaded OAuth JSON file at `gcp-oauth.keys.json` in the repo root instead of setting env vars.
 
 ## Docker
 
@@ -102,8 +136,3 @@ Replace all placeholder domains, paths, and users before deploying.
 ```bash
 pytest
 ```
-
-## More
-
-- [MCP_SERVER_GUIDE.md](./MCP_SERVER_GUIDE.md) — local vs remote vs packaged client setup, single-account boundary
-- [DISTRIBUTION.md](./DISTRIBUTION.md) — packaging, registries, and marketplace strategy

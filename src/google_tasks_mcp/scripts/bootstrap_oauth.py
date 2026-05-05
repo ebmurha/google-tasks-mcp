@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from google_tasks_mcp.auth import authorization_url, exchange_code
+from google_tasks_mcp.auth import authorization_url, build_authorization_flow, exchange_code
 from google_tasks_mcp.errors import AuthRequired, ConfigError
 
 
@@ -14,10 +14,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.parse_args(argv)
 
     try:
+        flow = build_authorization_flow()
         print("Open this URL in a browser and approve access:")
-        print(authorization_url())
-        code = input("Paste the code from the callback page: ").strip()
-        exchange_code(code)
+        print(authorization_url(flow))
+        code = input("Paste the code or full callback URL: ").strip()
+        exchange_code(code, flow=flow)
     except (AuthRequired, ConfigError) as exc:
         print(f"bootstrap failed: {exc}", file=sys.stderr)
         return 2
