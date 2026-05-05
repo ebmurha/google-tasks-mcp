@@ -40,7 +40,7 @@ pytest
 
 Do not open public issues for security vulnerabilities.
 
-Report privately to: security@yourdomain.com
+Report privately to: security@riseos.work
 
 Include:
 
