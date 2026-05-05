@@ -1,0 +1,58 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ebmurha/google-tasks-mcp",
+  "title": "Google Tasks MCP Server",
+  "description": "A private, context-efficient MCP server for Google Tasks.",
+  "repository": {
+    "url": "https://github.com/ebmurha/google-tasks-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "google-tasks-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "GOOGLE_CLIENT_ID",
+          "description": "Google OAuth client ID from the user's Google Cloud project.",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "GOOGLE_CLIENT_SECRET",
+          "description": "Google OAuth client secret from the user's Google Cloud project.",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "GOOGLE_REDIRECT_URI",
+          "description": "OAuth callback URL for the user's local or hosted server.",
+          "isRequired": true,
+          "format": "uri",
+          "isSecret": false
+        },
+        {
+          "name": "DB_PATH",
+          "description": "Persistent SQLite database path for tokens and cache.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "DEFAULT_TASKLIST",
+          "description": "Optional default tasklist title or ID.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

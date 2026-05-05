@@ -1,0 +1,24 @@
+{$GOOGLE_TASKS_MCP_DOMAIN:tasks.example.com} {
+    encode zstd gzip
+
+    handle /healthz {
+        reverse_proxy 127.0.0.1:8787
+    }
+
+    handle /callback* {
+        reverse_proxy 127.0.0.1:8787
+    }
+
+    handle /mcp* {
+        reverse_proxy 127.0.0.1:8787
+    }
+
+    handle {
+        respond "Not found" 404
+    }
+
+    log {
+        output file /var/log/caddy/google-tasks-mcp.log
+        format json
+    }
+}

@@ -1,0 +1,101 @@
+{
+  "manifest_version": "0.4",
+  "name": "google-tasks-mcp",
+  "display_name": "Google Tasks MCP Server",
+  "version": "0.1.0",
+  "description": "A private, context-efficient MCP server for Google Tasks.",
+  "long_description": "Connect MCP-compatible clients to a Google Tasks account through compact read/write tools. Each user runs their own instance and provides their own Google OAuth credentials.",
+  "author": {
+    "name": "ebmurha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ebmurha/google-tasks-mcp.git"
+  },
+  "documentation": "https://github.com/ebmurha/google-tasks-mcp#readme",
+  "support": "https://github.com/ebmurha/google-tasks-mcp/issues",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "google-tasks",
+    "tasks",
+    "productivity"
+  ],
+  "server": {
+    "type": "uv",
+    "entry_point": "src/google_tasks_mcp/__main__.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "google_tasks_mcp",
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "GOOGLE_CLIENT_ID": "${user_config.google_client_id}",
+        "GOOGLE_CLIENT_SECRET": "${user_config.google_client_secret}",
+        "GOOGLE_REDIRECT_URI": "${user_config.google_redirect_uri}",
+        "DB_PATH": "${user_config.db_path}",
+        "DEFAULT_TASKLIST": "${user_config.default_tasklist}"
+      }
+    }
+  },
+  "tools": [
+    { "name": "list_tasklists", "description": "List available Google tasklists." },
+    { "name": "today", "description": "List incomplete tasks due today." },
+    { "name": "overdue", "description": "List incomplete overdue tasks." },
+    { "name": "upcoming", "description": "List incomplete upcoming tasks." },
+    { "name": "search", "description": "Search task titles and notes." },
+    { "name": "get_task", "description": "Read one task with notes." },
+    { "name": "digest", "description": "Return a short task summary." },
+    { "name": "add", "description": "Create a task." },
+    { "name": "complete", "description": "Mark a task completed." },
+    { "name": "update", "description": "Update a task." },
+    { "name": "delete", "description": "Delete a task." },
+    { "name": "move", "description": "Move a task to another tasklist." }
+  ],
+  "tools_generated": false,
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"]
+  },
+  "user_config": {
+    "google_client_id": {
+      "type": "string",
+      "title": "Google OAuth Client ID",
+      "description": "OAuth client ID from your Google Cloud project.",
+      "required": true,
+      "sensitive": true
+    },
+    "google_client_secret": {
+      "type": "string",
+      "title": "Google OAuth Client Secret",
+      "description": "OAuth client secret from your Google Cloud project.",
+      "required": true,
+      "sensitive": true
+    },
+    "google_redirect_uri": {
+      "type": "string",
+      "title": "Google Redirect URI",
+      "description": "OAuth callback URL for this local or hosted server.",
+      "required": true,
+      "default": "http://localhost:8787/callback"
+    },
+    "db_path": {
+      "type": "string",
+      "title": "SQLite DB Path",
+      "description": "Path for the OAuth token and tasklist cache database.",
+      "required": true,
+      "default": "${HOME}/.google-tasks-mcp/google-tasks.db"
+    },
+    "default_tasklist": {
+      "type": "string",
+      "title": "Default Tasklist",
+      "description": "Optional Google tasklist title or ID to use when a tool omits tasklist.",
+      "required": false,
+      "default": ""
+    }
+  }
+}

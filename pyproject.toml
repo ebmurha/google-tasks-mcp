@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "google-tasks-mcp"
+version = "0.1.0"
+description = "A self-hosted MCP server for Google Tasks."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "mcp>=1.2.0",
+    "google-api-python-client>=2.150",
+    "google-auth>=2.35",
+    "google-auth-oauthlib>=1.2",
+    "python-dotenv>=1.0",
+    "starlette>=0.40",
+    "uvicorn[standard]>=0.32",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+google-tasks-mcp = "google_tasks_mcp.__main__:main"
+google-tasks-mcp-bootstrap = "google_tasks_mcp.scripts.bootstrap_oauth:main"
+google-tasks-mcp-set-refresh-token = "google_tasks_mcp.scripts.set_refresh_token:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

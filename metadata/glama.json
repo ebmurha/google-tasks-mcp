@@ -1,0 +1,26 @@
+{
+  "name": "google-tasks-mcp",
+  "displayName": "Google Tasks MCP Server",
+  "description": "A private, context-efficient MCP server for Google Tasks.",
+  "transport": ["stdio", "streamable-http"],
+  "category": "productivity",
+  "tools": [
+    "list_tasklists",
+    "today",
+    "overdue",
+    "upcoming",
+    "search",
+    "get_task",
+    "digest",
+    "add",
+    "complete",
+    "update",
+    "delete",
+    "move"
+  ],
+  "privacy": {
+    "credentialModel": "Each user supplies their own Google OAuth credentials.",
+    "tokenStorage": "Refresh tokens are stored only in the operator-controlled SQLite database.",
+    "sharedHostedEndpoint": false
+  }
+}

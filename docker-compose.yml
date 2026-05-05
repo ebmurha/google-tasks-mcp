@@ -1,0 +1,20 @@
+services:
+  google-tasks-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      BIND_HOST: 0.0.0.0
+      BIND_PORT: 8787
+      DB_PATH: /var/lib/google-tasks-mcp/google-tasks.db
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - google-tasks-data:/var/lib/google-tasks-mcp
+    restart: unless-stopped
+
+volumes:
+  google-tasks-data:
