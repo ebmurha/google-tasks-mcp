@@ -124,8 +124,40 @@ This order keeps the project portable and avoids lock-in while still meeting the
 
 MCPB is not universal. The project must remain usable through standard MCP transports without any marketplace or bundle.
 
+### Claude Desktop Spotlight
+
+Claude Desktop should be treated as a first-class distribution target.
+
+For remote HTTP mode, Claude Desktop uses a local stdio bridge. Install `mcp-remote` on the machine running Claude Desktop:
+
+```bash
+npm install -g mcp-remote
+```
+
+Working local HTTP config:
+
+```json
+{
+  "mcpServers": {
+    "google-tasks": {
+      "command": "mcp-remote",
+      "args": [
+        "http://127.0.0.1:8787/mcp",
+        "--header",
+        "Authorization: Bearer <MCP_BEARER_TOKEN>"
+      ]
+    }
+  }
+}
+```
+
+For a VPS deployment, replace the URL with `https://your-domain.example/mcp`.
+
+Do not publish real bearer tokens in docs, bundles, examples, screenshots, or registry metadata. For user-facing docs, prefer `<MCP_BEARER_TOKEN>` placeholders. For configs meant to avoid inline secrets, pass the header value through an environment variable instead.
+
 | Client or runtime | Best-supported setup for this project |
 | --- | --- |
+| Claude Desktop | `mcp-remote` bridge to local or VPS Streamable HTTP `/mcp`; MCPB may be offered as an optional local-install artifact where supported. |
 | Codex | Remote Streamable HTTP URL or local stdio command configured in Codex MCP settings. |
 | OpenAI Agents SDK | `MCPServerStreamableHttp` for VPS/hosted use; `MCPServerStdio` for local subprocess use. |
 | ChatGPT Apps/API integrations | Remote MCP server over HTTPS. |
