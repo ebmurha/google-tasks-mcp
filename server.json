@@ -35,7 +35,7 @@
           "name": "GOOGLE_REDIRECT_URI",
           "description": "OAuth callback URL for the user's local or hosted server.",
           "isRequired": true,
-          "format": "uri",
+          "format": "string",
           "isSecret": false
         },
         {
