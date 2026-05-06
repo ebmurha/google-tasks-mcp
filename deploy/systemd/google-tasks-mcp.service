@@ -1,0 +1,25 @@
+[Unit]
+Description=Google Tasks MCP Server
+After=network.target
+
+[Service]
+Type=simple
+User=google-tasks
+Group=google-tasks
+WorkingDirectory=/opt/google-tasks-mcp
+EnvironmentFile=/etc/google-tasks-mcp.env
+ExecStart=/opt/google-tasks-mcp/.venv/bin/python -m google_tasks_mcp --transport http
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/google-tasks-mcp
+
+[Install]
+WantedBy=multi-user.target
