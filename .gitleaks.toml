@@ -1,0 +1,62 @@
+title = "google-tasks-mcp gitleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "google-tasks-env-secret"
+description = "Google Tasks MCP environment secret"
+regex = '''(?i)(GOOGLE_CLIENT_SECRET|MCP_BEARER_TOKEN|GOOGLE_REFRESH_TOKEN)[ \t]*=[ \t]*['"]?([A-Za-z0-9._~+/\-=]{16,})['"]?'''
+secretGroup = 2
+keywords = [
+  "GOOGLE_CLIENT_SECRET",
+  "MCP_BEARER_TOKEN",
+  "GOOGLE_REFRESH_TOKEN",
+]
+
+[[rules.allowlists]]
+description = "Documented placeholders and test fixtures"
+stopwords = [
+  "your-client-secret",
+  "your-generated-token",
+  "<MCP_BEARER_TOKEN>",
+  "bearer-token",
+  "json-secret",
+  "env-secret",
+  "client-secret",
+]
+
+[[rules]]
+id = "google-oauth-refresh-token"
+description = "Google OAuth refresh token"
+regex = '''1//[0-9A-Za-z._~+/\-=]{20,}'''
+keywords = ["1//"]
+
+[allowlist]
+description = "Skip generated artifacts, local environments, caches, reports, and binary/runtime outputs that are not intended for public release."
+regexTarget = "match"
+paths = [
+  '''(^|[\\/])\.env(\..*)?$''',
+  '''(^|[\\/])gcp-oauth\.keys\.json$''',
+  '''(^|[\\/])venv[\\/]''',
+  '''(^|[\\/])\.venv[\\/]''',
+  '''(^|[\\/])env[\\/]''',
+  '''(^|[\\/])ENV[\\/]''',
+  '''(^|[\\/])__pycache__[\\/]''',
+  '''(^|[\\/])build[\\/]''',
+  '''(^|[\\/])dist[\\/]''',
+  '''(^|[\\/])htmlcov[\\/]''',
+  '''(^|[\\/])\.pytest_cache[\\/]''',
+  '''(^|[\\/])\.ruff_cache[\\/]''',
+  '''(^|[\\/])\.mypy_cache[\\/]''',
+  '''(^|[\\/])\.tox[\\/]''',
+  '''(^|[\\/])\.nox[\\/]''',
+  '''(^|[\\/])src[\\/]google_tasks_mcp\.egg-info[\\/]''',
+  '''(^|[\\/])docs[\\/]_build[\\/]''',
+  '''(^|[\\/])gitleaks-reports?\.json$''',
+  '''\.(db|sqlite|sqlite3|mcpb|tar|tar\.gz|tgz|pyc|pyo|log)$''',
+]
+regexes = [
+  '''(?i)GOOGLE_CLIENT_SECRET[ \t]*=[ \t]*['"]?your-client-secret['"]?''',
+  '''(?i)MCP_BEARER_TOKEN[ \t]*=[ \t]*['"]?your-generated-token['"]?''',
+]

@@ -8,6 +8,7 @@ docker-compose.override.yml
 compose.override.yml
 
 # Project local data and generated bundles
+gitleaks-report.json
 *.db
 *.sqlite
 *.sqlite3

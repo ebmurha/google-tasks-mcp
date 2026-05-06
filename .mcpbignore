@@ -2,6 +2,7 @@
 .env
 .env.*
 gcp-oauth.keys.json
+gitleaks-report.json
 *.db
 *.sqlite
 *.sqlite3
