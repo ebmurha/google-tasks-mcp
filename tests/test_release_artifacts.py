@@ -42,7 +42,9 @@ def test_vps_templates_use_placeholders_only():
 
     for marker in PRIVATE_MARKERS:
         assert marker not in combined
-    assert "tasks.example.com" in combined
+    assert "{$GOOGLE_TASKS_MCP_DOMAIN:tasks.example.com} {" in _read(
+        "deploy/caddy/Caddyfile"
+    ).splitlines()
     assert "MCP_BEARER_TOKEN=" in combined
 
 
