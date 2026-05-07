@@ -6,6 +6,10 @@
   "category": "productivity",
   "tools": [
     "list_tasklists",
+    "create_tasklist",
+    "get_tasklist",
+    "update_tasklist",
+    "delete_tasklist",
     "today",
     "overdue",
     "upcoming",

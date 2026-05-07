@@ -7,6 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_TOOLS = [
     "list_tasklists",
+    "create_tasklist",
+    "get_tasklist",
+    "update_tasklist",
+    "delete_tasklist",
     "today",
     "overdue",
     "upcoming",

@@ -55,6 +55,10 @@ args:    ["-m", "google_tasks_mcp", "--transport", "stdio"]
 | Tool | What it does |
 |------|--------------|
 | `list_tasklists` | List your task lists |
+| `create_tasklist` | Create a task list and return compact metadata with `human_summary` |
+| `get_tasklist` | Get a task list by ID or exact title |
+| `update_tasklist` | Rename a task list by ID only |
+| `delete_tasklist` | Delete a task list by ID after `confirm: true`; non-empty lists require `force: true` |
 | `today` | Incomplete tasks due today |
 | `overdue` | Incomplete overdue tasks |
 | `upcoming` | Tasks due within N days (default 7) |
@@ -67,7 +71,7 @@ args:    ["-m", "google_tasks_mcp", "--transport", "stdio"]
 | `delete` | Delete a task by ID or exact title and return pre-deletion task details with `deleted: true` |
 | `move` | Move a task by ID or exact title to another list and return the moved task details |
 
-All `tasklist` arguments accept both a list ID and a friendly title. Task title lookup is exact after trimming whitespace and ignores case; if more than one active task matches, the server returns a structured ambiguity error with candidate IDs. When `tasklist` is omitted, the server uses `DEFAULT_TASKLIST` from `.env`, or the first list returned by Google.
+All `tasklist` arguments accept both a list ID and a friendly title. Task title lookup is exact after trimming whitespace and ignores case; if more than one active task matches, the server returns a structured ambiguity error with candidate IDs. When `tasklist` is omitted, the server uses `DEFAULT_TASKLIST` from `.env`, or the first list returned by Google. Task list rename and delete tools require an ID to reduce accidental destructive changes.
 
 ### Limitations
 

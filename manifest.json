@@ -45,6 +45,10 @@
   },
   "tools": [
     { "name": "list_tasklists", "description": "List available Google tasklists." },
+    { "name": "create_tasklist", "description": "Create a Google tasklist." },
+    { "name": "get_tasklist", "description": "Read one Google tasklist by ID or exact title." },
+    { "name": "update_tasklist", "description": "Rename a Google tasklist by ID." },
+    { "name": "delete_tasklist", "description": "Delete a Google tasklist by ID after confirmation." },
     { "name": "today", "description": "List incomplete tasks due today." },
     { "name": "overdue", "description": "List incomplete overdue tasks." },
     { "name": "upcoming", "description": "List incomplete upcoming tasks." },

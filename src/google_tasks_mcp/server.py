@@ -113,6 +113,73 @@ def list_tasklists_tool() -> dict[str, list[dict[str, str]]]:
     }
 
 
+def create_tasklist_tool(title: str) -> dict[str, Any]:
+    """Create a Google tasklist and return compact metadata with human_summary."""
+
+    created = tasks_api.create_tasklist(title=title)
+    tasks_api.clear_tasklist_cache()
+    return digest.build_tasklist_response(created, operation="create")
+
+
+def get_tasklist_tool(id: str | None = None, title: str | None = None) -> dict[str, Any]:
+    """Get a Google tasklist by ID, or by exact title when ID is omitted."""
+
+    if id:
+        tasklist_id = id
+    elif title:
+        tasklist_id = _resolve(title)
+    else:
+        raise InvalidInputError("Tasklist id or title is required")
+    tasklist = tasks_api.get_tasklist(tasklist_id)
+    return digest.shrink_tasklist(tasklist)
+
+
+def update_tasklist_tool(id: str | None = None, new_title: str | None = None) -> dict[str, Any]:
+    """Rename a Google tasklist by ID only; title lookup is intentionally not supported."""
+
+    if not id:
+        raise InvalidInputError("Tasklist id is required")
+    if new_title is None:
+        raise InvalidInputError("New tasklist title is required")
+    updated = tasks_api.update_tasklist(id, title=new_title)
+    tasks_api.clear_tasklist_cache()
+    return digest.build_tasklist_response(updated, operation="update")
+
+
+def delete_tasklist_tool(
+    id: str | None = None,
+    confirm: bool = False,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Delete a Google tasklist by ID only after explicit confirmation.
+
+    Non-empty tasklists are rejected unless force is true. The response reports
+    how many visible or completed tasks were implicitly deleted with the list.
+    """
+
+    if not id:
+        raise InvalidInputError("Tasklist id is required")
+    if confirm is not True:
+        raise InvalidInputError("delete_tasklist requires confirm=true")
+
+    existing = tasks_api.get_tasklist(id)
+    task_items = tasks_api.list_tasks(id, show_completed=True, max_results=1000)
+    tasks_deleted_count = len([task for task in task_items if task.get("deleted") is not True])
+    if tasks_deleted_count and not force:
+        raise InvalidInputError(
+            "Tasklist is not empty; set force=true to delete it",
+            tasks_deleted_count=tasks_deleted_count,
+        )
+
+    tasks_api.delete_tasklist(id)
+    tasks_api.clear_tasklist_cache()
+    return digest.build_tasklist_response(
+        existing,
+        operation="delete",
+        tasks_deleted_count=tasks_deleted_count,
+    )
+
+
 def today_tool(tasklist: str | None = None) -> dict[str, Any]:
     tasklist_id = _resolve(tasklist)
     start, end = digest.utc_day_bounds(_today())
@@ -319,6 +386,10 @@ def create_mcp_server() -> FastMCP:
 
     tool_map: dict[str, Callable[..., Any]] = {
         "list_tasklists": list_tasklists_tool,
+        "create_tasklist": create_tasklist_tool,
+        "get_tasklist": get_tasklist_tool,
+        "update_tasklist": update_tasklist_tool,
+        "delete_tasklist": delete_tasklist_tool,
         "today": today_tool,
         "overdue": overdue_tool,
         "upcoming": upcoming_tool,

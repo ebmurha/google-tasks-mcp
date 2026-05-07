@@ -42,6 +42,38 @@ def shrink_task(t: dict[str, Any], *, include_notes: bool = False) -> dict[str, 
     return compact
 
 
+def shrink_tasklist(tasklist: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {
+        "id": tasklist.get("id"),
+        "title": tasklist.get("title", ""),
+    }
+    if tasklist.get("updated") is not None:
+        compact["updated"] = tasklist.get("updated")
+    return compact
+
+
+def build_tasklist_response(
+    tasklist: dict[str, Any],
+    *,
+    operation: str,
+    tasks_deleted_count: int | None = None,
+) -> dict[str, Any]:
+    compact = shrink_tasklist(tasklist)
+    title = str(compact.get("title") or "Untitled")
+    if operation == "create":
+        summary = f"Created tasklist '{title}'"
+    elif operation == "update":
+        summary = f"Renamed tasklist to '{title}'"
+    elif operation == "delete":
+        summary = f"Deleted tasklist '{title}'"
+    else:
+        summary = f"{operation.title()} tasklist '{title}'"
+    compact["human_summary"] = summary
+    if tasks_deleted_count is not None:
+        compact["tasks_deleted_count"] = tasks_deleted_count
+    return compact
+
+
 def _human_summary(
     task: dict[str, Any],
     *,

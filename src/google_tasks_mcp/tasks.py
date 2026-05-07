@@ -10,7 +10,7 @@ from googleapiclient.errors import HttpError
 
 from .auth import get_credentials
 from . import resolver
-from .errors import AmbiguousTitleError, GoogleTasksApiError, NotFoundError
+from .errors import AmbiguousTitleError, GoogleTasksApiError, InvalidInputError, NotFoundError
 
 
 def _service() -> Any:
@@ -58,6 +58,41 @@ def resolve_tasklist(title_or_id: str | None = None) -> str:
 
 def get_tasklist_title(tasklist_id: str) -> str:
     return resolver.get_tasklist_title(tasklist_id)
+
+
+def create_tasklist(*, title: str) -> dict[str, Any]:
+    clean_title = title.strip()
+    if not clean_title:
+        raise InvalidInputError("Tasklist title is required")
+    service = _service()
+    created = _execute(service.tasklists().insert(body={"title": clean_title}))
+    resolver.invalidate()
+    return created
+
+
+def get_tasklist(tasklist_id: str) -> dict[str, Any]:
+    service = _service()
+    return _execute(service.tasklists().get(tasklist=tasklist_id))
+
+
+def update_tasklist(tasklist_id: str, *, title: str) -> dict[str, Any]:
+    clean_title = title.strip()
+    if not tasklist_id.strip():
+        raise InvalidInputError("Tasklist id is required")
+    if not clean_title:
+        raise InvalidInputError("New tasklist title is required")
+    service = _service()
+    updated = _execute(service.tasklists().patch(tasklist=tasklist_id, body={"title": clean_title}))
+    resolver.invalidate()
+    return updated
+
+
+def delete_tasklist(tasklist_id: str) -> None:
+    if not tasklist_id.strip():
+        raise InvalidInputError("Tasklist id is required")
+    service = _service()
+    _execute(service.tasklists().delete(tasklist=tasklist_id))
+    resolver.invalidate()
 
 
 def resolve_task_by_title(

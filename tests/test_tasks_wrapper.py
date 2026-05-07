@@ -5,7 +5,44 @@ from datetime import date, datetime, timezone
 import pytest
 
 from google_tasks_mcp import tasks
-from google_tasks_mcp.errors import AmbiguousTitleError, GoogleTasksApiError, NotFoundError
+from google_tasks_mcp.errors import AmbiguousTitleError, GoogleTasksApiError, InvalidInputError, NotFoundError
+
+
+class _Request:
+    def __init__(self, response=None):
+        self.response = response
+
+    def execute(self):
+        return self.response
+
+
+class _TasklistsResource:
+    def __init__(self):
+        self.calls = []
+
+    def insert(self, **kwargs):
+        self.calls.append(("insert", kwargs))
+        return _Request({"id": "list-1", "title": kwargs["body"]["title"]})
+
+    def get(self, **kwargs):
+        self.calls.append(("get", kwargs))
+        return _Request({"id": kwargs["tasklist"], "title": "Inbox"})
+
+    def patch(self, **kwargs):
+        self.calls.append(("patch", kwargs))
+        return _Request({"id": kwargs["tasklist"], "title": kwargs["body"]["title"]})
+
+    def delete(self, **kwargs):
+        self.calls.append(("delete", kwargs))
+        return _Request(None)
+
+
+class _TasklistService:
+    def __init__(self):
+        self.resource = _TasklistsResource()
+
+    def tasklists(self):
+        return self.resource
 
 
 def test_date_to_rfc3339_from_date_string():
@@ -92,3 +129,32 @@ def test_resolve_task_by_title_ambiguous(monkeypatch, configured_env):
 
     assert [candidate["id"] for candidate in exc_info.value.details["candidates"]] == ["one", "two"]
     assert exc_info.value.details["candidates"][1]["due"] == "2026-05-08"
+
+
+def test_tasklist_crud_wrappers_call_google_methods_and_invalidate(monkeypatch, configured_env):
+    service = _TasklistService()
+    invalidations = []
+    monkeypatch.setattr(tasks, "_service", lambda: service)
+    monkeypatch.setattr(tasks.resolver, "invalidate", lambda: invalidations.append(True))
+
+    assert tasks.create_tasklist(title=" Inbox ") == {"id": "list-1", "title": "Inbox"}
+    assert tasks.get_tasklist("list-1") == {"id": "list-1", "title": "Inbox"}
+    assert tasks.update_tasklist("list-1", title=" Work ") == {"id": "list-1", "title": "Work"}
+    assert tasks.delete_tasklist("list-1") is None
+
+    assert service.resource.calls == [
+        ("insert", {"body": {"title": "Inbox"}}),
+        ("get", {"tasklist": "list-1"}),
+        ("patch", {"tasklist": "list-1", "body": {"title": "Work"}}),
+        ("delete", {"tasklist": "list-1"}),
+    ]
+    assert len(invalidations) == 3
+
+
+def test_tasklist_crud_wrappers_reject_blank_input():
+    with pytest.raises(InvalidInputError):
+        tasks.create_tasklist(title=" ")
+    with pytest.raises(InvalidInputError):
+        tasks.update_tasklist("list-1", title=" ")
+    with pytest.raises(InvalidInputError):
+        tasks.delete_tasklist(" ")

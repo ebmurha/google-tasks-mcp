@@ -10,6 +10,10 @@ from google_tasks_mcp.errors import AmbiguousTitleError, InvalidInputError, NotF
 
 @pytest.fixture
 def fake_task_store(monkeypatch, configured_env):
+    tasklists = {
+        "default": {"id": "default", "title": "Default", "updated": "2026-05-04T10:00:00.000Z"},
+        "target": {"id": "target", "title": "Target", "updated": "2026-05-04T11:00:00.000Z"},
+    }
     store = {
         "default": [
             {
@@ -49,22 +53,30 @@ def fake_task_store(monkeypatch, configured_env):
         "target": [],
     }
     deleted_prefetches = []
+    invalidations = []
 
     monkeypatch.setattr(server, "_today", lambda: date(2026, 5, 5))
     monkeypatch.setattr(
         server.tasks_api,
         "list_tasklists",
-        lambda: [{"id": "default", "title": "Default"}, {"id": "target", "title": "Target"}],
+        lambda: list(tasklists.values()),
     )
     monkeypatch.setattr(
         server.tasks_api,
         "resolve_tasklist",
-        lambda name=None: "target" if name and name.casefold() == "target" else "default",
+        lambda name=None: next(
+            (
+                tasklist_id
+                for tasklist_id, item in tasklists.items()
+                if name and (name == tasklist_id or name.casefold() == item["title"].casefold())
+            ),
+            "default",
+        ),
     )
     monkeypatch.setattr(
         server.tasks_api,
         "get_tasklist_title",
-        lambda tasklist_id: "Target" if tasklist_id == "target" else "Default",
+        lambda tasklist_id: tasklists[tasklist_id]["title"],
     )
 
     def list_tasks(tasklist_id, *, show_completed=False, due_min=None, due_max=None, max_results=100):
@@ -117,6 +129,32 @@ def fake_task_store(monkeypatch, configured_env):
         deleted_prefetches.append(get_task(tasklist_id, task_id).copy())
         store[tasklist_id] = [item for item in store[tasklist_id] if item["id"] != task_id]
 
+    def create_tasklist(*, title):
+        tasklist_id = f"list-{len(tasklists) + 1}"
+        tasklist = {
+            "id": tasklist_id,
+            "title": title.strip(),
+            "updated": "2026-05-05T14:00:00.000Z",
+            "kind": "tasks#taskList",
+            "etag": '"etag"',
+            "selfLink": "https://example.invalid/tasklist",
+        }
+        tasklists[tasklist_id] = tasklist
+        store[tasklist_id] = []
+        return tasklist
+
+    def get_tasklist(tasklist_id):
+        return tasklists[tasklist_id]
+
+    def update_tasklist(tasklist_id, *, title):
+        tasklists[tasklist_id]["title"] = title.strip()
+        tasklists[tasklist_id]["updated"] = "2026-05-05T15:00:00.000Z"
+        return tasklists[tasklist_id]
+
+    def delete_tasklist(tasklist_id):
+        del tasklists[tasklist_id]
+        del store[tasklist_id]
+
     monkeypatch.setattr(server.tasks_api, "list_tasks", list_tasks)
     monkeypatch.setattr(server.tasks_api, "get_task", get_task)
     monkeypatch.setattr(server.tasks_api, "insert_task", insert_task)
@@ -124,7 +162,12 @@ def fake_task_store(monkeypatch, configured_env):
     monkeypatch.setattr(server.tasks_api, "update_task", update_task)
     monkeypatch.setattr(server.tasks_api, "delete_task", delete_task)
     monkeypatch.setattr(server.tasks_api, "move_task", lambda tasklist_id, task_id: get_task(tasklist_id, task_id))
-    return store, deleted_prefetches
+    monkeypatch.setattr(server.tasks_api, "create_tasklist", create_tasklist)
+    monkeypatch.setattr(server.tasks_api, "get_tasklist", get_tasklist)
+    monkeypatch.setattr(server.tasks_api, "update_tasklist", update_tasklist)
+    monkeypatch.setattr(server.tasks_api, "delete_tasklist", delete_tasklist)
+    monkeypatch.setattr(server.tasks_api, "clear_tasklist_cache", lambda: invalidations.append(True))
+    return store, deleted_prefetches, tasklists, invalidations
 
 
 def test_list_tasklists_is_compact(fake_task_store):
@@ -133,6 +176,76 @@ def test_list_tasklists_is_compact(fake_task_store):
     assert result == {
         "tasklists": [{"id": "default", "title": "Default"}, {"id": "target", "title": "Target"}]
     }
+
+
+def test_tasklist_crud_round_trip_and_strips_google_fields(fake_task_store):
+    created = server.create_tasklist_tool("Projects")
+    assert created == {
+        "id": "list-3",
+        "title": "Projects",
+        "updated": "2026-05-05T14:00:00.000Z",
+        "human_summary": "Created tasklist 'Projects'",
+    }
+    assert "kind" not in created
+    assert "etag" not in created
+    assert "selfLink" not in created
+
+    fetched = server.get_tasklist_tool(title="projects")
+    assert fetched == {
+        "id": "list-3",
+        "title": "Projects",
+        "updated": "2026-05-05T14:00:00.000Z",
+    }
+
+    updated = server.update_tasklist_tool(id="list-3", new_title="Projects Renamed")
+    assert updated["title"] == "Projects Renamed"
+    assert updated["human_summary"] == "Renamed tasklist to 'Projects Renamed'"
+
+    deleted = server.delete_tasklist_tool(id="list-3", confirm=True)
+    assert deleted["id"] == "list-3"
+    assert deleted["tasks_deleted_count"] == 0
+    assert deleted["human_summary"] == "Deleted tasklist 'Projects Renamed'"
+    assert "list-3" not in fake_task_store[2]
+
+
+def test_tasklist_mutations_invalidate_resolver_cache(fake_task_store):
+    created = server.create_tasklist_tool("Fresh")
+
+    assert fake_task_store[3]
+    assert server.get_tasklist_tool(title="Fresh")["id"] == created["id"]
+
+
+def test_update_and_delete_tasklist_require_id(fake_task_store):
+    update_result = server._logged_tool("update_tasklist", server.update_tasklist_tool)(
+        new_title="Nope"
+    )
+    delete_result = server._logged_tool("delete_tasklist", server.delete_tasklist_tool)(confirm=True)
+
+    assert update_result["error"] == "INVALID_INPUT"
+    assert update_result["code"] == 400
+    assert delete_result["error"] == "INVALID_INPUT"
+    assert delete_result["code"] == 400
+
+
+def test_delete_tasklist_requires_confirm(fake_task_store):
+    result = server._logged_tool("delete_tasklist", server.delete_tasklist_tool)(id="target")
+
+    assert result["error"] == "INVALID_INPUT"
+    assert result["code"] == 400
+    assert result["message"] == "delete_tasklist requires confirm=true"
+
+
+def test_delete_tasklist_non_empty_requires_force(fake_task_store):
+    rejected = server._logged_tool("delete_tasklist", server.delete_tasklist_tool)(
+        id="default", confirm=True
+    )
+    assert rejected["error"] == "INVALID_INPUT"
+    assert rejected["code"] == 400
+    assert rejected["tasks_deleted_count"] == 3
+
+    deleted = server.delete_tasklist_tool(id="default", confirm=True, force=True)
+    assert deleted["tasks_deleted_count"] == 3
+    assert "default" not in fake_task_store[2]
 
 
 def test_today_filters_and_strips_google_fields(fake_task_store):
@@ -344,6 +457,10 @@ def test_registered_mcp_tools_have_exact_names():
 
     assert asyncio.run(run()) == [
         "list_tasklists",
+        "create_tasklist",
+        "get_tasklist",
+        "update_tasklist",
+        "delete_tasklist",
         "today",
         "overdue",
         "upcoming",
