@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "google-tasks-mcp",
   "display_name": "Google Tasks MCP Server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A private, context-efficient MCP server for Google Tasks.",
   "long_description": "Connect MCP-compatible clients to a Google Tasks account through compact read/write tools. Each user runs their own instance and provides their own Google OAuth credentials.",
   "author": {
@@ -55,7 +55,7 @@
     { "name": "overdue", "description": "List incomplete overdue tasks." },
     { "name": "upcoming", "description": "List incomplete upcoming tasks." },
     { "name": "search", "description": "Search task titles and notes." },
-    { "name": "get_task", "description": "Read one task with notes." },
+    { "name": "get_task", "description": "Read one task with notes, parent, position, and web link." },
     { "name": "digest", "description": "Return a short task summary." },
     { "name": "add", "description": "Create a task or subtask." },
     { "name": "complete", "description": "Mark a task completed." },

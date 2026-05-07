@@ -65,7 +65,7 @@ args:    ["-m", "google_tasks_mcp", "--transport", "stdio"]
 | `overdue` | Incomplete overdue tasks |
 | `upcoming` | Tasks due within N days (default 7) |
 | `search` | Case-insensitive title + notes search |
-| `get_task` | Single task by ID or exact title, with full notes |
+| `get_task` | Single task by ID or exact title, with notes, parent, position, and web link |
 | `digest` | Short text summary (~30–100 tokens) |
 | `add` | Create a task or subtask, optionally after a sibling, and return a rich mutation response with `human_summary` |
 | `complete` | Mark a task done by ID or exact title and return title, due date, tasklist, and `human_summary` |

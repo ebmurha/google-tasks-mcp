@@ -831,6 +831,18 @@ def test_get_task_includes_truncated_notes(fake_task_store):
     result = server.get_task_tool("today-1")
 
     assert result["notes"] == ("x" * 200) + "..."
+    assert result["web_view_link"] == "https://tasks.google.com/task/today-1"
+
+
+def test_get_task_includes_single_task_detail_fields(fake_task_store):
+    child = server.add_tool("Detailed child", parent="Due today")
+
+    result = server.get_task_tool(child["id"])
+
+    assert result["parent"] == "today-1"
+    assert result["position"] == child["position"]
+    assert result["updated"] == child["updated"]
+    assert result["links"] == []
 
 
 def test_cross_list_move_emulates_insert_delete(fake_task_store):

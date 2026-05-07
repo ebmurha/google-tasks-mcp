@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - Completed tasks can now be reopened with `update.status` or the `uncomplete` tool; breaking-change: false.
 - Task listing now auto-paginates up to 1000 tasks and returns a continuation token when truncated; breaking-change: false.
 - Partial task updates are now covered so unchanged fields remain preserved; breaking-change: false.
+- Single-task fetches now include parent, position, and web link details; breaking-change: false.
 
 ## [0.1.0] - 2026-05-05
 

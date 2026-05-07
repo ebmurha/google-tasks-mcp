@@ -39,6 +39,17 @@ def shrink_task(t: dict[str, Any], *, include_notes: bool = False) -> dict[str, 
         compact["due"] = due
     if include_notes and t.get("notes") is not None:
         compact["notes"] = _truncate_notes(str(t.get("notes")))
+    if include_notes:
+        for source, target in (
+            ("completed", "completed"),
+            ("parent", "parent"),
+            ("position", "position"),
+            ("updated", "updated"),
+            ("links", "links"),
+            ("webViewLink", "web_view_link"),
+        ):
+            if t.get(source) is not None:
+                compact[target] = t.get(source)
     return compact
 
 
