@@ -60,6 +60,16 @@ class _TasksResource:
             }
         )
 
+    def move(self, **kwargs):
+        self.calls.append(("move", kwargs))
+        return _Request(
+            {
+                "id": kwargs["task"],
+                "parent": kwargs.get("parent"),
+                "position": "0002",
+            }
+        )
+
 
 class _TasklistService:
     def __init__(self):
@@ -263,6 +273,33 @@ def test_insert_task_passes_parent_and_previous(monkeypatch, configured_env):
                 },
                 "parent": "parent-1",
                 "previous": "sibling-1",
+            },
+        )
+    ]
+
+
+def test_move_task_passes_positioning_controls(monkeypatch, configured_env):
+    service = _TasklistService()
+    monkeypatch.setattr(tasks, "_service", lambda: service)
+
+    result = tasks.move_task(
+        "list-1",
+        "task-1",
+        parent="parent-1",
+        previous="sibling-1",
+        destination_tasklist="list-2",
+    )
+
+    assert result == {"id": "task-1", "parent": "parent-1", "position": "0002"}
+    assert service.tasks_resource.calls == [
+        (
+            "move",
+            {
+                "tasklist": "list-1",
+                "task": "task-1",
+                "parent": "parent-1",
+                "previous": "sibling-1",
+                "destinationTasklist": "list-2",
             },
         )
     ]

@@ -490,26 +490,58 @@ def delete_tool(
 
 def move_tool(
     id: str | None = None,
+    task: str | None = None,
     tasklist: str | None = None,
     from_tasklist: str | None = None,
     title: str | None = None,
+    destination_parent: str | None = None,
+    destination_previous: str | None = None,
+    destination_tasklist: str | None = None,
     include_completed: bool = False,
 ) -> dict[str, Any]:
-    """Move a task by ID or exact title to another list and return its rich mutation response."""
+    """Move a task by ID or exact title, with optional re-parenting and ordering.
 
-    target_tasklist_id = _resolve(tasklist)
+    Use task or id for the task reference. tasklist remains a backward-compatible
+    alias for destination_tasklist. Cross-list moves are emulated by inserting a
+    copy in the destination list and deleting the original, so the returned id is
+    the new Google task id.
+    """
+
+    target_tasklist_id = _resolve(destination_tasklist or tasklist or from_tasklist)
     source_tasklist_id = _resolve(from_tasklist)
-    task_id = _resolve_task_id(source_tasklist_id, id, title, include_completed=include_completed)
+    if id or title:
+        task_id = _resolve_task_id(
+            source_tasklist_id,
+            id,
+            title,
+            include_completed=include_completed,
+        )
+    elif task:
+        task_id = _resolve_task_reference(source_tasklist_id, task)
+    else:
+        raise InvalidInputError("Task id or title is required")
     target_title = _tasklist_title(target_tasklist_id)
+    parent_id = _resolve_task_reference(target_tasklist_id, destination_parent)
+    previous_id = _resolve_task_reference(target_tasklist_id, destination_previous)
 
     if source_tasklist_id == target_tasklist_id:
-        moved = tasks_api.move_task(source_tasklist_id, task_id)
+        moved = tasks_api.move_task(
+            source_tasklist_id,
+            task_id,
+            parent=parent_id,
+            previous=previous_id,
+        )
+        move_target = target_title
+        if parent_id:
+            move_target = f"parent {parent_id}"
+        elif previous_id:
+            move_target = f"after {previous_id}"
         return digest.build_mutation_response(
             moved,
             target_tasklist_id,
             target_title,
             operation="move",
-            move_target=target_title,
+            move_target=move_target,
         )
 
     original = tasks_api.get_task(source_tasklist_id, task_id)
@@ -518,6 +550,8 @@ def move_tool(
         title=original.get("title", ""),
         notes=original.get("notes"),
         due=_due_date(original),
+        parent=parent_id,
+        previous=previous_id,
     )
     tasks_api.delete_task(source_tasklist_id, task_id)
     return digest.build_mutation_response(

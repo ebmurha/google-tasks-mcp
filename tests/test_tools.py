@@ -166,6 +166,25 @@ def fake_task_store(monkeypatch, configured_env):
             item["position"] = f"{index:04d}"
         return task
 
+    def move_task(tasklist_id, task_id, *, parent=None, previous=None, destination_tasklist=None):
+        destination_id = destination_tasklist or tasklist_id
+        task = get_task(tasklist_id, task_id)
+        store[tasklist_id] = [item for item in store[tasklist_id] if item["id"] != task_id]
+        task["parent"] = parent
+        if previous:
+            for index, item in enumerate(store[destination_id]):
+                if item["id"] == previous:
+                    store[destination_id].insert(index + 1, task)
+                    break
+            else:
+                store[destination_id].append(task)
+        else:
+            store[destination_id].append(task)
+        for list_id in {tasklist_id, destination_id}:
+            for index, item in enumerate(store[list_id], start=1):
+                item["position"] = f"{index:04d}"
+        return task
+
     def complete_task(tasklist_id, task_id):
         task = get_task(tasklist_id, task_id)
         task["status"] = "completed"
@@ -222,7 +241,7 @@ def fake_task_store(monkeypatch, configured_env):
     monkeypatch.setattr(server.tasks_api, "update_task", update_task)
     monkeypatch.setattr(server.tasks_api, "delete_task", delete_task)
     monkeypatch.setattr(server.tasks_api, "clear_completed", clear_completed)
-    monkeypatch.setattr(server.tasks_api, "move_task", lambda tasklist_id, task_id: get_task(tasklist_id, task_id))
+    monkeypatch.setattr(server.tasks_api, "move_task", move_task)
     monkeypatch.setattr(server.tasks_api, "create_tasklist", create_tasklist)
     monkeypatch.setattr(server.tasks_api, "get_tasklist", get_tasklist)
     monkeypatch.setattr(server.tasks_api, "update_tasklist", update_tasklist)
@@ -619,6 +638,74 @@ def test_cross_list_move_emulates_insert_delete(fake_task_store):
     assert result["human_summary"] == "Moved 'Old task' to Target"
     assert all(item["id"] != "old-1" for item in fake_task_store[0]["default"])
     assert any(item["title"] == "Old task" for item in fake_task_store[0]["target"])
+
+
+def test_move_accepts_task_reference_and_destination_tasklist(fake_task_store):
+    result = server.move_tool(task="old-1", destination_tasklist="Target")
+
+    assert result["title"] == "Old task"
+    assert result["id"].startswith("new-")
+    assert result["id"] != "old-1"
+    assert result["tasklist_id"] == "target"
+    assert all(item["id"] != "old-1" for item in fake_task_store[0]["default"])
+    assert any(item["id"] == result["id"] for item in fake_task_store[0]["target"])
+
+
+def test_move_task_reference_accepts_exact_title(fake_task_store):
+    result = server.move_tool(task="Old task", destination_tasklist="Target")
+
+    assert result["title"] == "Old task"
+    assert result["tasklist_id"] == "target"
+    assert all(item["id"] != "old-1" for item in fake_task_store[0]["default"])
+
+
+def test_same_list_move_reparents_task(fake_task_store):
+    child = server.add_tool("Existing child", parent="Due today")
+
+    result = server.move_tool(task=child["id"], destination_parent="Old task")
+
+    assert result["id"] == child["id"]
+    assert result["parent"] == "old-1"
+    assert result["tasklist_id"] == "default"
+
+
+def test_same_list_move_reorders_after_previous(fake_task_store):
+    first = server.add_tool("First reorder")
+    second = server.add_tool("Second reorder")
+
+    result = server.move_tool(task=first["id"], destination_previous=second["id"])
+    ordered_ids = [task["id"] for task in server.list_tasks_tool(show_completed=True)["tasks"]]
+
+    assert result["id"] == first["id"]
+    assert ordered_ids.index(first["id"]) == ordered_ids.index(second["id"]) + 1
+
+
+def test_same_list_move_to_top_level_clears_parent(fake_task_store):
+    child = server.add_tool("Top level child", parent="Due today")
+
+    result = server.move_tool(task=child["id"], destination_parent=None)
+
+    assert result["id"] == child["id"]
+    assert result["parent"] is None
+
+
+def test_cross_list_move_combines_destination_parent_and_previous(fake_task_store):
+    parent = server.add_tool("Destination parent", tasklist="Target")
+    first = server.add_tool("Destination first", tasklist="Target", parent=parent["id"])
+
+    result = server.move_tool(
+        task="old-1",
+        destination_tasklist="Target",
+        destination_parent=parent["id"],
+        destination_previous=first["id"],
+    )
+    target_ids = [task["id"] for task in server.list_tasks_tool(tasklist="Target", show_completed=True)["tasks"]]
+
+    assert result["id"].startswith("new-")
+    assert result["id"] != "old-1"
+    assert result["parent"] == parent["id"]
+    assert target_ids.index(result["id"]) == target_ids.index(first["id"]) + 1
+    assert all(item["id"] != "old-1" for item in fake_task_store[0]["default"])
 
 
 def test_registered_mcp_tools_have_exact_names():

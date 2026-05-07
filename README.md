@@ -71,9 +71,9 @@ args:    ["-m", "google_tasks_mcp", "--transport", "stdio"]
 | `complete` | Mark a task done by ID or exact title and return title, due date, tasklist, and `human_summary` |
 | `update` | Edit a task by ID, or by exact title for non-title fields, and return changed fields in `human_summary` |
 | `delete` | Delete a task by ID or exact title and return pre-deletion task details with `deleted: true` |
-| `move` | Move a task by ID or exact title to another list and return the moved task details |
+| `move` | Move a task by ID or exact title, optionally changing tasklist, parent, or sibling order |
 
-All `tasklist` arguments accept both a list ID and a friendly title. Task title lookup is exact after trimming whitespace and ignores case; if more than one active task matches, the server returns a structured ambiguity error with candidate IDs. When `tasklist` is omitted, the server uses `DEFAULT_TASKLIST` from `.env`, or the first list returned by Google. Task list rename and delete tools require an ID to reduce accidental destructive changes.
+All `tasklist` arguments accept both a list ID and a friendly title. Task title lookup is exact after trimming whitespace and ignores case; if more than one active task matches, the server returns a structured ambiguity error with candidate IDs. When `tasklist` is omitted, the server uses `DEFAULT_TASKLIST` from `.env`, or the first list returned by Google. Task list rename and delete tools require an ID to reduce accidental destructive changes. Cross-list task moves are emulated by creating the task in the destination list and deleting the original, so the moved task has a new Google task ID.
 
 ### Limitations
 

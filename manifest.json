@@ -61,7 +61,7 @@
     { "name": "complete", "description": "Mark a task completed." },
     { "name": "update", "description": "Update a task." },
     { "name": "delete", "description": "Delete a task." },
-    { "name": "move", "description": "Move a task to another tasklist." }
+    { "name": "move", "description": "Move a task to a destination tasklist, parent, or sibling position." }
   ],
   "tools_generated": false,
   "compatibility": {

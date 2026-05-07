@@ -279,6 +279,7 @@ def move_task(
     *,
     parent: str | None = None,
     previous: str | None = None,
+    destination_tasklist: str | None = None,
 ) -> dict[str, Any]:
     service = _service()
     params: dict[str, Any] = {"tasklist": tasklist_id, "task": task_id}
@@ -286,4 +287,6 @@ def move_task(
         params["parent"] = parent
     if previous is not None:
         params["previous"] = previous
+    if destination_tasklist is not None:
+        params["destinationTasklist"] = destination_tasklist
     return _execute(service.tasks().move(**params))
