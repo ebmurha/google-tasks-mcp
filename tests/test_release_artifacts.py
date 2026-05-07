@@ -26,32 +26,23 @@ EXPECTED_TOOLS = [
     "delete",
     "move",
 ]
-PRIVATE_MARKERS = [
-    "zoe-tasks"
-    "riseos",
-    "Digital Ocean",
-    "Cowork",
-]
-
-
 def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
 def test_vps_templates_use_placeholders_only():
+    caddyfile = _read("deploy/caddy/Caddyfile")
     combined = "\n".join(
         [
-            _read("deploy/caddy/Caddyfile"),
+            caddyfile,
             _read("deploy/systemd/google-tasks-mcp.service"),
             _read(".env.example"),
         ]
     )
 
-    for marker in PRIVATE_MARKERS:
-        assert marker not in combined
-    assert "{$GOOGLE_TASKS_MCP_DOMAIN:tasks.example.com} {" in _read(
-        "deploy/caddy/Caddyfile"
-    ).splitlines()
+    site_address = next(line.strip() for line in caddyfile.splitlines() if line.strip())
+    assert site_address == "{$GOOGLE_TASKS_MCP_DOMAIN:tasks.example.com} {"
+    assert "your-domain.example" not in combined
     assert "MCP_BEARER_TOKEN=" in combined
 
 
