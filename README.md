@@ -69,7 +69,13 @@ args:    ["-m", "google_tasks_mcp", "--transport", "stdio"]
 
 All `tasklist` arguments accept both a list ID and a friendly title. When omitted, the server uses `DEFAULT_TASKLIST` from `.env`, or the first list returned by Google.
 
-Cross-list `move` is emulated via insert + delete. The moved task gets a new Google task ID.
+### Limitations
+
+These are Google Tasks REST API limits, not MCP gaps — no workaround exists in this server:
+
+- **Due dates are date-only.** Any time-of-day component on `due` is silently dropped by Google.
+- **No recurrence.** The REST API has no `recurrence` field; recurring tasks created in the Google Tasks UI cannot be created or read through the API.
+- **`clear` hides, doesn't delete.** Cleared completed tasks are marked hidden — they survive in the account and reappear when listed with `show_hidden`.
 
 ## Google Cloud setup
 

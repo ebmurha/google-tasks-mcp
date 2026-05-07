@@ -20,7 +20,7 @@ EXPECTED_TOOLS = [
     "move",
 ]
 PRIVATE_MARKERS = [
-    "tasks.zoe",
+    "zoe-tasks"
     "riseos",
     "Digital Ocean",
     "Cowork",
