@@ -20,6 +20,7 @@ def reset_global_state(monkeypatch: pytest.MonkeyPatch, tmp_path):
         "BIND_PORT",
         "LOG_LEVEL",
         "DEFAULT_TASKLIST",
+        "GOOGLE_TASKS_MCP_DEFAULT_TZ",
     ]:
         monkeypatch.delenv(name, raising=False)
     reset_settings_cache()

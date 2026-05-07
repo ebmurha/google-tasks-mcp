@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "google-tasks-mcp",
   "display_name": "Google Tasks MCP Server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A private, context-efficient MCP server for Google Tasks.",
   "long_description": "Connect MCP-compatible clients to a Google Tasks account through compact read/write tools. Each user runs their own instance and provides their own Google OAuth credentials.",
   "author": {
@@ -45,17 +45,24 @@
   },
   "tools": [
     { "name": "list_tasklists", "description": "List available Google tasklists." },
+    { "name": "create_tasklist", "description": "Create a Google tasklist." },
+    { "name": "get_tasklist", "description": "Read one Google tasklist by ID or exact title." },
+    { "name": "update_tasklist", "description": "Rename a Google tasklist by ID." },
+    { "name": "delete_tasklist", "description": "Delete a Google tasklist by ID after confirmation." },
+    { "name": "list_tasks", "description": "List tasks with Google Tasks filters, auto-paginating up to 1000 tasks." },
+    { "name": "clear_completed", "description": "Hide completed tasks in a tasklist after confirmation." },
     { "name": "today", "description": "List incomplete tasks due today." },
     { "name": "overdue", "description": "List incomplete overdue tasks." },
     { "name": "upcoming", "description": "List incomplete upcoming tasks." },
     { "name": "search", "description": "Search task titles and notes." },
-    { "name": "get_task", "description": "Read one task with notes." },
+    { "name": "get_task", "description": "Read one task with notes, parent, position, and web link." },
     { "name": "digest", "description": "Return a short task summary." },
-    { "name": "add", "description": "Create a task." },
+    { "name": "add", "description": "Create a task or subtask." },
     { "name": "complete", "description": "Mark a task completed." },
-    { "name": "update", "description": "Update a task." },
+    { "name": "update", "description": "Update a task, including completion status." },
+    { "name": "uncomplete", "description": "Reopen a completed task." },
     { "name": "delete", "description": "Delete a task." },
-    { "name": "move", "description": "Move a task to another tasklist." }
+    { "name": "move", "description": "Move a task to a destination tasklist, parent, or sibling position." }
   ],
   "tools_generated": false,
   "compatibility": {

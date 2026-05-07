@@ -2,21 +2,15 @@
 
 from __future__ import annotations
 
-import time
 from datetime import date, datetime, timezone
 from typing import Any
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from . import db
 from .auth import get_credentials
-from .config import get_settings
-from .errors import GoogleTasksApiError
-
-
-TASKLIST_CACHE_SECONDS = 300
-_tasklist_cache: tuple[float, list[dict[str, Any]]] | None = None
+from . import resolver
+from .errors import AmbiguousTitleError, GoogleTasksApiError, InvalidInputError, NotFoundError
 
 
 def _service() -> Any:
@@ -31,8 +25,7 @@ def _execute(request: Any) -> Any:
 
 
 def clear_tasklist_cache() -> None:
-    global _tasklist_cache
-    _tasklist_cache = None
+    resolver.invalidate()
 
 
 def date_to_rfc3339(value: str | date | datetime | None) -> str | None:
@@ -56,71 +49,175 @@ def date_to_rfc3339(value: str | date | datetime | None) -> str | None:
 
 
 def list_tasklists() -> list[dict[str, Any]]:
-    global _tasklist_cache
-
-    now = time.time()
-    if _tasklist_cache and now - _tasklist_cache[0] < TASKLIST_CACHE_SECONDS:
-        return list(_tasklist_cache[1])
-
-    service = _service()
-    result = _execute(service.tasklists().list(maxResults=100))
-    tasklists = result.get("items", []) if isinstance(result, dict) else []
-    compact = [
-        {"id": item["id"], "title": item.get("title", "")}
-        for item in tasklists
-        if item.get("id")
-    ]
-    for item in compact:
-        db.upsert_tasklist(item["id"], item["title"])
-    _tasklist_cache = (now, compact)
-    return list(compact)
+    return resolver.list_tasklists()
 
 
 def resolve_tasklist(title_or_id: str | None = None) -> str:
-    settings = get_settings()
-    requested = (title_or_id or settings.default_tasklist or "").strip()
+    return resolver.resolve_tasklist(title_or_id)
 
-    cached = db.list_tasklists_cached()
-    if requested:
-        for item in cached:
-            if requested == item.id or requested.casefold() == item.title.casefold():
-                return item.id
 
-    tasklists = list_tasklists()
-    if not tasklists:
-        raise GoogleTasksApiError("No Google tasklists were found")
+def get_tasklist_title(tasklist_id: str) -> str:
+    return resolver.get_tasklist_title(tasklist_id)
 
-    if requested:
-        for item in tasklists:
-            title = item.get("title", "")
-            if requested == item.get("id") or requested.casefold() == title.casefold():
-                return item["id"]
-        raise GoogleTasksApiError(f"Tasklist not found: {requested}")
 
-    return tasklists[0]["id"]
+def create_tasklist(*, title: str) -> dict[str, Any]:
+    clean_title = title.strip()
+    if not clean_title:
+        raise InvalidInputError("Tasklist title is required")
+    service = _service()
+    created = _execute(service.tasklists().insert(body={"title": clean_title}))
+    resolver.invalidate()
+    return created
+
+
+def get_tasklist(tasklist_id: str) -> dict[str, Any]:
+    service = _service()
+    return _execute(service.tasklists().get(tasklist=tasklist_id))
+
+
+def update_tasklist(tasklist_id: str, *, title: str) -> dict[str, Any]:
+    clean_title = title.strip()
+    if not tasklist_id.strip():
+        raise InvalidInputError("Tasklist id is required")
+    if not clean_title:
+        raise InvalidInputError("New tasklist title is required")
+    service = _service()
+    updated = _execute(service.tasklists().patch(tasklist=tasklist_id, body={"title": clean_title}))
+    resolver.invalidate()
+    return updated
+
+
+def delete_tasklist(tasklist_id: str) -> None:
+    if not tasklist_id.strip():
+        raise InvalidInputError("Tasklist id is required")
+    service = _service()
+    _execute(service.tasklists().delete(tasklist=tasklist_id))
+    resolver.invalidate()
+
+
+def resolve_task_by_title(
+    tasklist_id: str,
+    title: str,
+    *,
+    include_completed: bool = False,
+    tasklist_title: str | None = None,
+) -> str:
+    query = title.strip()
+    tasklist_name = tasklist_title or get_tasklist_title(tasklist_id)
+    candidates = []
+    for task in list_tasks(tasklist_id, show_completed=include_completed, max_results=100):
+        if task.get("deleted") is True:
+            continue
+        if not include_completed and task.get("status") == "completed":
+            continue
+        if str(task.get("title") or "").strip().casefold() == query.casefold():
+            candidates.append(task)
+
+    if len(candidates) == 1:
+        return str(candidates[0]["id"])
+    if len(candidates) > 1:
+        raise AmbiguousTitleError(
+            f"Multiple active tasks match title '{query}'",
+            candidates=[
+                {
+                    "id": task.get("id"),
+                    "title": task.get("title", ""),
+                    "due": str(task.get("due")).split("T", 1)[0] if task.get("due") else None,
+                    "tasklist_title": tasklist_name,
+                }
+                for task in candidates
+            ],
+            query=query,
+            searched_tasklist=tasklist_name,
+        )
+    raise NotFoundError(
+        f"No active task matching '{query}' in tasklist '{tasklist_name}'",
+        searched_tasklist=tasklist_name,
+        query=query,
+    )
 
 
 def list_tasks(
     tasklist_id: str,
     *,
     show_completed: bool = False,
+    show_deleted: bool = False,
+    show_hidden: bool | None = None,
+    show_assigned: bool = False,
     due_min: str | None = None,
     due_max: str | None = None,
+    completed_min: str | None = None,
+    completed_max: str | None = None,
+    updated_min: str | None = None,
     max_results: int = 100,
+    page_token: str | None = None,
 ) -> list[dict[str, Any]]:
+    bounded_max = max(1, min(max_results, 1000))
+    items: list[dict[str, Any]] = []
+    next_page_token = page_token
+    while len(items) < bounded_max:
+        result = list_tasks_page(
+            tasklist_id,
+            show_completed=show_completed,
+            show_deleted=show_deleted,
+            show_hidden=show_hidden,
+            show_assigned=show_assigned,
+            due_min=due_min,
+            due_max=due_max,
+            completed_min=completed_min,
+            completed_max=completed_max,
+            updated_min=updated_min,
+            max_results=min(bounded_max - len(items), 100),
+            page_token=next_page_token,
+        )
+        if not isinstance(result, dict):
+            break
+        page_items = result.get("items", []) or []
+        items.extend(page_items)
+        next_page_token = result.get("nextPageToken")
+        if not next_page_token or not page_items:
+            break
+    return items
+
+
+def list_tasks_page(
+    tasklist_id: str,
+    *,
+    show_completed: bool = False,
+    show_deleted: bool = False,
+    show_hidden: bool | None = None,
+    show_assigned: bool = False,
+    due_min: str | None = None,
+    due_max: str | None = None,
+    completed_min: str | None = None,
+    completed_max: str | None = None,
+    updated_min: str | None = None,
+    max_results: int = 100,
+    page_token: str | None = None,
+) -> dict[str, Any]:
     service = _service()
     params: dict[str, Any] = {
         "tasklist": tasklist_id,
         "showCompleted": show_completed,
-        "showHidden": show_completed,
-        "maxResults": max_results,
+        "showDeleted": show_deleted,
+        "showHidden": show_completed if show_hidden is None else show_hidden,
+        "showAssigned": show_assigned,
+        "maxResults": max(1, min(max_results, 100)),
     }
+    if page_token:
+        params["pageToken"] = page_token
     if due_min:
         params["dueMin"] = due_min
     if due_max:
         params["dueMax"] = due_max
+    if completed_min:
+        params["completedMin"] = completed_min
+    if completed_max:
+        params["completedMax"] = completed_max
+    if updated_min:
+        params["updatedMin"] = updated_min
     result = _execute(service.tasks().list(**params))
-    return result.get("items", []) if isinstance(result, dict) else []
+    return result if isinstance(result, dict) else {}
 
 
 def get_task(tasklist_id: str, task_id: str) -> dict[str, Any]:
@@ -134,6 +231,8 @@ def insert_task(
     title: str,
     notes: str | None = None,
     due: str | None = None,
+    parent: str | None = None,
+    previous: str | None = None,
 ) -> dict[str, Any]:
     service = _service()
     body: dict[str, Any] = {"title": title}
@@ -141,7 +240,12 @@ def insert_task(
         body["notes"] = notes
     if due is not None:
         body["due"] = date_to_rfc3339(due)
-    return _execute(service.tasks().insert(tasklist=tasklist_id, body=body))
+    params: dict[str, Any] = {"tasklist": tasklist_id, "body": body}
+    if parent is not None:
+        params["parent"] = parent
+    if previous is not None:
+        params["previous"] = previous
+    return _execute(service.tasks().insert(**params))
 
 
 def update_task(
@@ -175,12 +279,18 @@ def delete_task(tasklist_id: str, task_id: str) -> None:
     _execute(service.tasks().delete(tasklist=tasklist_id, task=task_id))
 
 
+def clear_completed(tasklist_id: str) -> None:
+    service = _service()
+    _execute(service.tasks().clear(tasklist=tasklist_id))
+
+
 def move_task(
     tasklist_id: str,
     task_id: str,
     *,
     parent: str | None = None,
     previous: str | None = None,
+    destination_tasklist: str | None = None,
 ) -> dict[str, Any]:
     service = _service()
     params: dict[str, Any] = {"tasklist": tasklist_id, "task": task_id}
@@ -188,4 +298,6 @@ def move_task(
         params["parent"] = parent
     if previous is not None:
         params["previous"] = previous
+    if destination_tasklist is not None:
+        params["destinationTasklist"] = destination_tasklist
     return _execute(service.tasks().move(**params))

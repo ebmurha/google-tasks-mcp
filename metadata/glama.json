@@ -1,11 +1,18 @@
 {
   "name": "google-tasks-mcp",
   "displayName": "Google Tasks MCP Server",
+  "version": "0.2.0",
   "description": "A private, context-efficient MCP server for Google Tasks.",
   "transport": ["stdio", "streamable-http"],
   "category": "productivity",
   "tools": [
     "list_tasklists",
+    "create_tasklist",
+    "get_tasklist",
+    "update_tasklist",
+    "delete_tasklist",
+    "list_tasks",
+    "clear_completed",
     "today",
     "overdue",
     "upcoming",
@@ -15,6 +22,7 @@
     "add",
     "complete",
     "update",
+    "uncomplete",
     "delete",
     "move"
   ],

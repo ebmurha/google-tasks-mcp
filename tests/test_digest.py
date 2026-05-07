@@ -74,3 +74,49 @@ def test_text_digest_groups_by_due(monkeypatch):
     assert '1 due today: "Email Sam"' in text
     assert '1 overdue: "Renew domain (yesterday)"' in text
     assert '1 upcoming: "Book travel (in 2d)"' in text
+
+
+def test_build_mutation_response_add_shape():
+    task = {
+        "id": "task-1",
+        "title": "Friday ship",
+        "notes": None,
+        "status": "needsAction",
+        "due": "2026-05-08T00:00:00.000Z",
+        "completed": None,
+        "parent": None,
+        "position": "00000000000000000000",
+        "updated": "2026-05-07T05:42:11.000Z",
+        "links": [],
+        "webViewLink": "https://tasks.google.com/embed/task-1",
+        "kind": "tasks#task",
+        "etag": "etag",
+        "selfLink": "https://example.test",
+    }
+
+    result = digest.build_mutation_response(
+        task,
+        "list-1",
+        "EB Tasks",
+        operation="add",
+    )
+
+    assert result == {
+        "id": "task-1",
+        "title": "Friday ship",
+        "notes": None,
+        "status": "needsAction",
+        "due": "2026-05-08",
+        "completed": None,
+        "parent": None,
+        "position": "00000000000000000000",
+        "updated": "2026-05-07T05:42:11.000Z",
+        "links": [],
+        "web_view_link": "https://tasks.google.com/embed/task-1",
+        "tasklist_id": "list-1",
+        "tasklist_title": "EB Tasks",
+        "human_summary": "Created 'Friday ship' due 2026-05-08 in EB Tasks",
+    }
+    assert "kind" not in result
+    assert "etag" not in result
+    assert "selfLink" not in result
