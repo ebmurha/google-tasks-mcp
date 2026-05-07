@@ -637,6 +637,77 @@ def test_update_by_id_preserves_existing_title_update_behavior(fake_task_store):
     assert result["human_summary"] == "Updated 'Renamed': title"
 
 
+def test_update_is_partial_patch(monkeypatch, configured_env):
+    calls = []
+    stored_task = {
+        "id": "task-1",
+        "title": "Patch me",
+        "notes": "keep this note",
+        "due": "2026-05-08T00:00:00.000Z",
+        "status": "needsAction",
+        "position": "0001",
+        "links": [],
+    }
+
+    class Request:
+        def __init__(self, response):
+            self.response = response
+
+        def execute(self):
+            return self.response
+
+    class TasksResource:
+        def patch(self, **kwargs):
+            calls.append(("patch", kwargs))
+            stored_task.update(kwargs["body"])
+            return Request(stored_task.copy())
+
+        def update(self, **kwargs):
+            calls.append(("update", kwargs))
+            return Request(
+                {
+                    "id": kwargs["task"],
+                    "title": kwargs["body"].get("title", ""),
+                    "due": kwargs["body"].get("due"),
+                    "status": kwargs["body"].get("status", "needsAction"),
+                    "position": "0001",
+                    "links": [],
+                }
+            )
+
+        def get(self, **kwargs):
+            calls.append(("get", kwargs))
+            return Request(stored_task.copy())
+
+    class Service:
+        def __init__(self):
+            self.tasks_resource = TasksResource()
+
+        def tasks(self):
+            return self.tasks_resource
+
+    monkeypatch.setattr(server.tasks_api, "_service", lambda: Service())
+    monkeypatch.setattr(server.tasks_api, "resolve_tasklist", lambda value=None: "list-1")
+    monkeypatch.setattr(server.tasks_api, "get_tasklist_title", lambda tasklist_id: "Default")
+
+    updated = server.update_tool(id="task-1", due="2026-05-09", tasklist="Default")
+    fetched = server.get_task_tool(id="task-1", tasklist="Default")
+
+    assert updated["notes"] == "keep this note"
+    assert updated["due"] == "2026-05-09"
+    assert fetched["notes"] == "keep this note"
+    assert fetched["due"] == "2026-05-09"
+    assert calls[0] == (
+        "patch",
+        {
+            "tasklist": "list-1",
+            "task": "task-1",
+            "body": {"due": "2026-05-09T00:00:00.000Z"},
+        },
+    )
+    assert [name for name, _kwargs in calls] == ["patch", "get"]
+
+
 def test_update_status_reopens_completed_task_by_title(fake_task_store):
     result = server.update_tool(title="Done task", status="needsAction")
 
