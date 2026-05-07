@@ -37,12 +37,25 @@ class _TasklistsResource:
         return _Request(None)
 
 
+class _TasksResource:
+    def __init__(self):
+        self.calls = []
+
+    def list(self, **kwargs):
+        self.calls.append(("list", kwargs))
+        return _Request({"items": [{"id": "task-1"}], "nextPageToken": "next"})
+
+
 class _TasklistService:
     def __init__(self):
         self.resource = _TasklistsResource()
+        self.tasks_resource = _TasksResource()
 
     def tasklists(self):
         return self.resource
+
+    def tasks(self):
+        return self.tasks_resource
 
 
 def test_date_to_rfc3339_from_date_string():
@@ -158,3 +171,44 @@ def test_tasklist_crud_wrappers_reject_blank_input():
         tasks.update_tasklist("list-1", title=" ")
     with pytest.raises(InvalidInputError):
         tasks.delete_tasklist(" ")
+
+
+def test_list_tasks_page_passes_supported_filters(monkeypatch, configured_env):
+    service = _TasklistService()
+    monkeypatch.setattr(tasks, "_service", lambda: service)
+
+    result = tasks.list_tasks_page(
+        "list-1",
+        show_completed=True,
+        show_deleted=True,
+        show_hidden=True,
+        show_assigned=True,
+        due_min="2026-05-01T00:00:00.000Z",
+        due_max="2026-05-08T00:00:00.000Z",
+        completed_min="2026-05-02T00:00:00.000Z",
+        completed_max="2026-05-03T00:00:00.000Z",
+        updated_min="2026-05-04T00:00:00.000Z",
+        max_results=500,
+        page_token="abc",
+    )
+
+    assert result["items"] == [{"id": "task-1"}]
+    assert service.tasks_resource.calls == [
+        (
+            "list",
+            {
+                "tasklist": "list-1",
+                "showCompleted": True,
+                "showDeleted": True,
+                "showHidden": True,
+                "showAssigned": True,
+                "maxResults": 100,
+                "pageToken": "abc",
+                "dueMin": "2026-05-01T00:00:00.000Z",
+                "dueMax": "2026-05-08T00:00:00.000Z",
+                "completedMin": "2026-05-02T00:00:00.000Z",
+                "completedMax": "2026-05-03T00:00:00.000Z",
+                "updatedMin": "2026-05-04T00:00:00.000Z",
+            },
+        )
+    ]

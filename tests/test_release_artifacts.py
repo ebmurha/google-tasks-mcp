@@ -11,6 +11,7 @@ EXPECTED_TOOLS = [
     "get_tasklist",
     "update_tasklist",
     "delete_tasklist",
+    "list_tasks",
     "today",
     "overdue",
     "upcoming",

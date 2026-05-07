@@ -141,23 +141,72 @@ def list_tasks(
     tasklist_id: str,
     *,
     show_completed: bool = False,
+    show_deleted: bool = False,
+    show_hidden: bool | None = None,
+    show_assigned: bool = False,
     due_min: str | None = None,
     due_max: str | None = None,
+    completed_min: str | None = None,
+    completed_max: str | None = None,
+    updated_min: str | None = None,
     max_results: int = 100,
+    page_token: str | None = None,
 ) -> list[dict[str, Any]]:
+    result = list_tasks_page(
+        tasklist_id,
+        show_completed=show_completed,
+        show_deleted=show_deleted,
+        show_hidden=show_hidden,
+        show_assigned=show_assigned,
+        due_min=due_min,
+        due_max=due_max,
+        completed_min=completed_min,
+        completed_max=completed_max,
+        updated_min=updated_min,
+        max_results=max_results,
+        page_token=page_token,
+    )
+    return result.get("items", []) if isinstance(result, dict) else []
+
+
+def list_tasks_page(
+    tasklist_id: str,
+    *,
+    show_completed: bool = False,
+    show_deleted: bool = False,
+    show_hidden: bool | None = None,
+    show_assigned: bool = False,
+    due_min: str | None = None,
+    due_max: str | None = None,
+    completed_min: str | None = None,
+    completed_max: str | None = None,
+    updated_min: str | None = None,
+    max_results: int = 100,
+    page_token: str | None = None,
+) -> dict[str, Any]:
     service = _service()
     params: dict[str, Any] = {
         "tasklist": tasklist_id,
         "showCompleted": show_completed,
-        "showHidden": show_completed,
-        "maxResults": max_results,
+        "showDeleted": show_deleted,
+        "showHidden": show_completed if show_hidden is None else show_hidden,
+        "showAssigned": show_assigned,
+        "maxResults": max(1, min(max_results, 100)),
     }
+    if page_token:
+        params["pageToken"] = page_token
     if due_min:
         params["dueMin"] = due_min
     if due_max:
         params["dueMax"] = due_max
+    if completed_min:
+        params["completedMin"] = completed_min
+    if completed_max:
+        params["completedMax"] = completed_max
+    if updated_min:
+        params["updatedMin"] = updated_min
     result = _execute(service.tasks().list(**params))
-    return result.get("items", []) if isinstance(result, dict) else []
+    return result if isinstance(result, dict) else {}
 
 
 def get_task(tasklist_id: str, task_id: str) -> dict[str, Any]:

@@ -79,15 +79,50 @@ def fake_task_store(monkeypatch, configured_env):
         lambda tasklist_id: tasklists[tasklist_id]["title"],
     )
 
-    def list_tasks(tasklist_id, *, show_completed=False, due_min=None, due_max=None, max_results=100):
+    def _filtered_items(
+        tasklist_id,
+        *,
+        show_completed=False,
+        show_deleted=False,
+        show_hidden=False,
+        show_assigned=False,
+        due_min=None,
+        due_max=None,
+        completed_min=None,
+        completed_max=None,
+        updated_min=None,
+        max_results=100,
+    ):
         items = list(store[tasklist_id])
         if not show_completed:
             items = [item for item in items if item.get("status") != "completed"]
+        if not show_deleted:
+            items = [item for item in items if item.get("deleted") is not True]
+        if not show_hidden:
+            items = [item for item in items if item.get("hidden") is not True]
         if due_min:
             items = [item for item in items if item.get("due", "9999") >= due_min]
         if due_max:
             items = [item for item in items if item.get("due", "9999") < due_max]
+        if completed_min:
+            items = [item for item in items if item.get("completed", "0000") >= completed_min]
+        if completed_max:
+            items = [item for item in items if item.get("completed", "9999") < completed_max]
+        if updated_min:
+            items = [item for item in items if item.get("updated", "0000") >= updated_min]
         return items[:max_results]
+
+    def list_tasks(tasklist_id, **kwargs):
+        return _filtered_items(tasklist_id, **kwargs)
+
+    def list_tasks_page(tasklist_id, *, page_token=None, max_results=100, **kwargs):
+        offset = int(page_token or "0")
+        items = _filtered_items(tasklist_id, max_results=1000, **kwargs)
+        page = items[offset : offset + max_results]
+        result = {"items": page}
+        if offset + max_results < len(items):
+            result["nextPageToken"] = str(offset + max_results)
+        return result
 
     def get_task(tasklist_id, task_id):
         return next(item for item in store[tasklist_id] if item["id"] == task_id)
@@ -156,6 +191,7 @@ def fake_task_store(monkeypatch, configured_env):
         del store[tasklist_id]
 
     monkeypatch.setattr(server.tasks_api, "list_tasks", list_tasks)
+    monkeypatch.setattr(server.tasks_api, "list_tasks_page", list_tasks_page)
     monkeypatch.setattr(server.tasks_api, "get_task", get_task)
     monkeypatch.setattr(server.tasks_api, "insert_task", insert_task)
     monkeypatch.setattr(server.tasks_api, "complete_task", complete_task)
@@ -213,6 +249,55 @@ def test_tasklist_mutations_invalidate_resolver_cache(fake_task_store):
 
     assert fake_task_store[3]
     assert server.get_tasklist_tool(title="Fresh")["id"] == created["id"]
+
+
+def test_list_tasks_filters_and_returns_rich_objects(fake_task_store):
+    result = server.list_tasks_tool(
+        tasklist="Default",
+        due_min="2026-05-04",
+        due_max="2026-05-06",
+        show_completed=False,
+    )
+
+    assert result["count"] == 2
+    assert result["tasklist_title"] == "Default"
+    assert [task["id"] for task in result["tasks"]] == ["today-1", "old-1"]
+    assert result["tasks"][0]["tasklist_id"] == "default"
+    assert result["tasks"][0]["tasklist_title"] == "Default"
+    assert result["tasks"][0]["due"] == "2026-05-05"
+    assert "human_summary" not in result["tasks"][0]
+    assert "kind" not in result["tasks"][0]
+    assert "webViewLink" not in result["tasks"][0]
+    assert "next_page_token" not in result
+
+
+def test_list_tasks_show_completed_and_pagination(fake_task_store):
+    result = server.list_tasks_tool(show_completed=True, max_results=2)
+
+    assert result["count"] == 2
+    assert [task["id"] for task in result["tasks"]] == ["today-1", "old-1"]
+    assert result["next_page_token"] == "2"
+
+    next_page = server.list_tasks_tool(show_completed=True, page_token=result["next_page_token"])
+    assert next_page["count"] == 1
+    assert next_page["tasks"][0]["id"] == "done-1"
+
+
+def test_list_tasks_timezone_changes_bare_date_filters(monkeypatch, fake_task_store):
+    captured = []
+
+    def list_tasks_page(tasklist_id, **kwargs):
+        captured.append(kwargs)
+        return {"items": []}
+
+    monkeypatch.setattr(server.tasks_api, "list_tasks_page", list_tasks_page)
+
+    server.list_tasks_tool(due_min="2026-05-10", due_max="2026-05-11", timezone="Africa/Nairobi")
+    server.list_tasks_tool(due_min="2026-05-10", due_max="2026-05-11", timezone="America/Los_Angeles")
+
+    assert captured[0]["due_min"] == "2026-05-10T00:00:00.000+03:00"
+    assert captured[1]["due_min"] == "2026-05-10T00:00:00.000-07:00"
+    assert captured[0]["due_min"] != captured[1]["due_min"]
 
 
 def test_update_and_delete_tasklist_require_id(fake_task_store):
@@ -461,6 +546,7 @@ def test_registered_mcp_tools_have_exact_names():
         "get_tasklist",
         "update_tasklist",
         "delete_tasklist",
+        "list_tasks",
         "today",
         "overdue",
         "upcoming",

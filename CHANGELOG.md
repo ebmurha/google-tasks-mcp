@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Mutation tools now return rich self-describing responses with `human_summary`; breaking-change: false.
 - Task tools can now find tasks by exact title, with structured not-found and ambiguity errors; breaking-change: false.
 - Tasklist create, read, rename, and delete tools are now available with compact responses; breaking-change: false.
+- A general task listing tool now supports Google Tasks filters and timezone-aware date ranges; breaking-change: false.
 
 ## [0.1.0] - 2026-05-05
 

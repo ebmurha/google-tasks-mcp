@@ -139,6 +139,30 @@ def build_mutation_response(
     }
 
 
+def full_task_object(
+    task: dict[str, Any],
+    tasklist_id: str,
+    tasklist_title: str,
+) -> dict[str, Any]:
+    """Build the richer task shape used by general list responses."""
+
+    return {
+        "id": task.get("id"),
+        "title": task.get("title", ""),
+        "notes": task.get("notes"),
+        "status": task.get("status", "needsAction"),
+        "due": _date_only(task.get("due")),
+        "completed": task.get("completed"),
+        "parent": task.get("parent"),
+        "position": task.get("position"),
+        "updated": task.get("updated"),
+        "links": task.get("links", []),
+        "web_view_link": task.get("webViewLink"),
+        "tasklist_id": tasklist_id,
+        "tasklist_title": tasklist_title,
+    }
+
+
 def shrink_list(tasks: list[dict[str, Any]], *, include_notes: bool = False) -> dict[str, Any]:
     return {
         "count": len(tasks),

@@ -5,14 +5,15 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
-from datetime import date, timedelta
+from datetime import date, datetime, time as datetime_time, timedelta, timezone as datetime_timezone
 from functools import wraps
 from typing import Any, TypeVar
+from zoneinfo import ZoneInfo
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-from . import digest
+from . import digest, timezones
 from .errors import AuthRequired, ConfigError, GoogleTasksApiError, GoogleTasksMcpError, InvalidInputError
 from . import tasks as tasks_api
 
@@ -102,6 +103,30 @@ def _due_date(task: dict[str, Any]) -> str | None:
     return str(due).split("T", 1)[0]
 
 
+def _rfc3339(value: str | None, tz: ZoneInfo | None) -> str | None:
+    if value is None:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    if "T" in raw:
+        return raw
+    try:
+        parsed = date.fromisoformat(raw)
+    except ValueError as exc:
+        raise InvalidInputError("Date filters must be YYYY-MM-DD or RFC 3339", value=raw) from exc
+    if tz is None:
+        return f"{parsed.isoformat()}T00:00:00.000Z"
+    dt = datetime.combine(parsed, datetime_time.min, tzinfo=tz)
+    return dt.isoformat(timespec="milliseconds")
+
+
+def _today_in_timezone(tz: ZoneInfo | None) -> date:
+    if tz is None:
+        return _today()
+    return datetime.now(datetime_timezone.utc).astimezone(tz).date()
+
+
 def list_tasklists_tool() -> dict[str, list[dict[str, str]]]:
     tasklists = tasks_api.list_tasklists()
     return {
@@ -111,6 +136,56 @@ def list_tasklists_tool() -> dict[str, list[dict[str, str]]]:
             if item.get("id")
         ]
     }
+
+
+def list_tasks_tool(
+    tasklist: str | None = None,
+    due_min: str | None = None,
+    due_max: str | None = None,
+    completed_min: str | None = None,
+    completed_max: str | None = None,
+    updated_min: str | None = None,
+    show_completed: bool = False,
+    show_deleted: bool = False,
+    show_hidden: bool = False,
+    show_assigned: bool = False,
+    max_results: int = 1000,
+    page_token: str | None = None,
+    timezone: str | None = None,
+) -> dict[str, Any]:
+    """List tasks with Google Tasks filters and compact rich task objects."""
+
+    tz = timezones.resolve_timezone(timezone)
+    tasklist_id = _resolve(tasklist)
+    tasklist_title = _tasklist_title(tasklist_id)
+    bounded_max = max(1, min(max_results, 1000))
+    response = tasks_api.list_tasks_page(
+        tasklist_id,
+        due_min=_rfc3339(due_min, tz),
+        due_max=_rfc3339(due_max, tz),
+        completed_min=_rfc3339(completed_min, tz),
+        completed_max=_rfc3339(completed_max, tz),
+        updated_min=_rfc3339(updated_min, tz),
+        show_completed=show_completed,
+        show_deleted=show_deleted,
+        show_hidden=show_hidden,
+        show_assigned=show_assigned,
+        max_results=bounded_max,
+        page_token=page_token,
+    )
+    tasks = [
+        digest.full_task_object(task, tasklist_id, tasklist_title)
+        for task in response.get("items", []) or []
+    ]
+    result: dict[str, Any] = {
+        "tasks": tasks,
+        "count": len(tasks),
+        "tasklist_title": tasklist_title,
+    }
+    next_page_token = response.get("nextPageToken")
+    if next_page_token:
+        result["next_page_token"] = next_page_token
+    return result
 
 
 def create_tasklist_tool(title: str) -> dict[str, Any]:
@@ -181,27 +256,41 @@ def delete_tasklist_tool(
 
 
 def today_tool(tasklist: str | None = None) -> dict[str, Any]:
-    tasklist_id = _resolve(tasklist)
-    start, end = digest.utc_day_bounds(_today())
-    task_items = _incomplete(tasks_api.list_tasks(tasklist_id, due_min=start, due_max=end))
-    return digest.shrink_list(task_items)
+    tz = timezones.resolve_timezone()
+    today = _today_in_timezone(tz)
+    tomorrow = today + timedelta(days=1)
+    result = list_tasks_tool(
+        tasklist=tasklist,
+        due_min=today.isoformat(),
+        due_max=tomorrow.isoformat(),
+        show_completed=False,
+    )
+    return digest.shrink_list(result["tasks"])
 
 
 def overdue_tool(tasklist: str | None = None) -> dict[str, Any]:
-    tasklist_id = _resolve(tasklist)
-    start, _end = digest.utc_day_bounds(_today())
-    task_items = _incomplete(tasks_api.list_tasks(tasklist_id, due_max=start))
-    return digest.shrink_list(task_items)
+    tz = timezones.resolve_timezone()
+    today = _today_in_timezone(tz)
+    result = list_tasks_tool(
+        tasklist=tasklist,
+        due_max=today.isoformat(),
+        show_completed=False,
+    )
+    return digest.shrink_list(result["tasks"])
 
 
 def upcoming_tool(days: int = 7, tasklist: str | None = None) -> dict[str, Any]:
     bounded_days = max(1, min(days, 365))
-    tasklist_id = _resolve(tasklist)
-    start, _ = digest.utc_day_bounds(_today())
-    end_day = _today() + timedelta(days=bounded_days + 1)
-    end, _unused = digest.utc_day_bounds(end_day)
-    task_items = _incomplete(tasks_api.list_tasks(tasklist_id, due_min=start, due_max=end))
-    return digest.shrink_list(task_items)
+    tz = timezones.resolve_timezone()
+    today = _today_in_timezone(tz)
+    end_day = today + timedelta(days=bounded_days + 1)
+    result = list_tasks_tool(
+        tasklist=tasklist,
+        due_min=today.isoformat(),
+        due_max=end_day.isoformat(),
+        show_completed=False,
+    )
+    return digest.shrink_list(result["tasks"])
 
 
 def search_tool(
@@ -214,14 +303,13 @@ def search_tool(
     if not needle:
         return digest.shrink_list([])
     bounded_limit = max(1, min(limit, 100))
-    tasklist_id = _resolve(tasklist)
-    task_items = tasks_api.list_tasks(
-        tasklist_id,
+    listed = list_tasks_tool(
+        tasklist=tasklist,
         show_completed=include_completed,
         max_results=max(100, bounded_limit),
     )
     matches = []
-    for task in task_items:
+    for task in listed["tasks"]:
         haystack = f"{task.get('title', '')}\n{task.get('notes', '')}".casefold()
         if needle in haystack and (include_completed or task.get("status") != "completed"):
             matches.append(task)
@@ -245,8 +333,8 @@ def get_task_tool(
 
 
 def digest_tool(tasklist: str | None = None) -> dict[str, str]:
-    task_items = _incomplete(tasks_api.list_tasks(_resolve(tasklist), max_results=100))
-    return {"text": digest.text_digest(task_items)}
+    task_items = list_tasks_tool(tasklist=tasklist, max_results=100)["tasks"]
+    return {"text": digest.text_digest(_incomplete(task_items))}
 
 
 def add_tool(
@@ -390,6 +478,7 @@ def create_mcp_server() -> FastMCP:
         "get_tasklist": get_tasklist_tool,
         "update_tasklist": update_tasklist_tool,
         "delete_tasklist": delete_tasklist_tool,
+        "list_tasks": list_tasks_tool,
         "today": today_tool,
         "overdue": overdue_tool,
         "upcoming": upcoming_tool,
