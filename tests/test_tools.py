@@ -166,6 +166,13 @@ def test_search_is_case_insensitive_and_excludes_completed_by_default(fake_task_
     assert result["tasks"][0]["id"] == "old-1"
 
 
+def test_get_task_by_title_is_case_insensitive_and_exact(fake_task_store):
+    result = server.get_task_tool(title=" due today ")
+
+    assert result["id"] == "today-1"
+    assert result["title"] == "Due today"
+
+
 def test_add_complete_update_delete_flow(fake_task_store):
     created = server.add_tool("New task", notes="note", due="2026-05-06")
     assert created == {
@@ -204,6 +211,108 @@ def test_add_complete_update_delete_flow(fake_task_store):
     assert deleted["deleted"] is True
     assert deleted["human_summary"] == "Deleted 'New task' from Default"
     assert fake_task_store[1][-1]["id"] == created["id"]
+
+
+def test_complete_by_title_succeeds_with_no_id(fake_task_store):
+    result = server.complete_tool(title="Due today")
+
+    assert result["id"] == "today-1"
+    assert result["status"] == "completed"
+    assert result["human_summary"] == "Completed 'Due today' (was due 2026-05-05)"
+
+
+def test_delete_by_title_with_tasklist_title(fake_task_store):
+    created = server.add_tool("Target task", tasklist="Target")
+
+    result = server.delete_tool(title="target task", tasklist="Target")
+
+    assert result["id"] == created["id"]
+    assert result["title"] == "Target task"
+    assert result["tasklist_title"] == "Target"
+    assert result["deleted"] is True
+
+
+def test_update_by_title_changes_non_title_fields(fake_task_store):
+    result = server.update_tool(title="Due today", due="2026-05-08")
+
+    assert result["id"] == "today-1"
+    assert result["title"] == "Due today"
+    assert result["due"] == "2026-05-08"
+    assert result["human_summary"] == "Updated 'Due today': due"
+
+
+def test_update_by_id_preserves_existing_title_update_behavior(fake_task_store):
+    result = server.update_tool(id="today-1", title="Renamed")
+
+    assert result["id"] == "today-1"
+    assert result["title"] == "Renamed"
+    assert result["human_summary"] == "Updated 'Renamed': title"
+
+
+def test_title_lookup_excludes_completed_by_default(fake_task_store):
+    result = server._logged_tool("get_task", server.get_task_tool)(title="Done task")
+
+    assert result["error"] == "NOT_FOUND"
+    assert result["code"] == 404
+    assert result["searched_tasklist"] == "Default"
+    assert result["query"] == "Done task"
+
+
+def test_title_lookup_can_include_completed(fake_task_store):
+    result = server.get_task_tool(title="Done task", include_completed=True)
+
+    assert result["id"] == "done-1"
+    assert result["title"] == "Done task"
+
+
+def test_ambiguous_title_returns_candidates(fake_task_store):
+    fake_task_store[0]["default"].append(
+        {
+            "id": "today-2",
+            "title": "Due today",
+            "due": "2026-05-06T00:00:00.000Z",
+            "status": "needsAction",
+        }
+    )
+
+    result = server._logged_tool("complete", server.complete_tool)(title="Due today")
+
+    assert result["error"] == "AMBIGUOUS_TITLE"
+    assert result["code"] == 409
+    assert result["message"] == "Multiple active tasks match title 'Due today'"
+    assert result["searched_tasklist"] == "Default"
+    assert [candidate["id"] for candidate in result["candidates"]] == ["today-1", "today-2"]
+
+
+def test_after_completing_one_duplicate_title_lookup_succeeds(fake_task_store):
+    fake_task_store[0]["default"].append(
+        {
+            "id": "today-2",
+            "title": "Due today",
+            "due": "2026-05-06T00:00:00.000Z",
+            "status": "completed",
+        }
+    )
+
+    result = server.complete_tool(title="Due today")
+
+    assert result["id"] == "today-1"
+    assert result["status"] == "completed"
+
+
+def test_id_preferred_when_id_and_title_are_both_provided(fake_task_store):
+    result = server.complete_tool(id="old-1", title="Due today")
+
+    assert result["id"] == "old-1"
+    assert result["title"] == "Old task"
+
+
+def test_move_by_title_uses_source_tasklist(fake_task_store):
+    result = server.move_tool(title="Old task", tasklist="Target")
+
+    assert result["title"] == "Old task"
+    assert result["tasklist_id"] == "target"
+    assert all(item["id"] != "old-1" for item in fake_task_store[0]["default"])
 
 
 def test_get_task_includes_truncated_notes(fake_task_store):

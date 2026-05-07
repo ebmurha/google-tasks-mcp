@@ -10,7 +10,7 @@ from googleapiclient.errors import HttpError
 
 from .auth import get_credentials
 from . import resolver
-from .errors import GoogleTasksApiError
+from .errors import AmbiguousTitleError, GoogleTasksApiError, NotFoundError
 
 
 def _service() -> Any:
@@ -58,6 +58,48 @@ def resolve_tasklist(title_or_id: str | None = None) -> str:
 
 def get_tasklist_title(tasklist_id: str) -> str:
     return resolver.get_tasklist_title(tasklist_id)
+
+
+def resolve_task_by_title(
+    tasklist_id: str,
+    title: str,
+    *,
+    include_completed: bool = False,
+    tasklist_title: str | None = None,
+) -> str:
+    query = title.strip()
+    tasklist_name = tasklist_title or get_tasklist_title(tasklist_id)
+    candidates = []
+    for task in list_tasks(tasklist_id, show_completed=include_completed, max_results=100):
+        if task.get("deleted") is True:
+            continue
+        if not include_completed and task.get("status") == "completed":
+            continue
+        if str(task.get("title") or "").strip().casefold() == query.casefold():
+            candidates.append(task)
+
+    if len(candidates) == 1:
+        return str(candidates[0]["id"])
+    if len(candidates) > 1:
+        raise AmbiguousTitleError(
+            f"Multiple active tasks match title '{query}'",
+            candidates=[
+                {
+                    "id": task.get("id"),
+                    "title": task.get("title", ""),
+                    "due": str(task.get("due")).split("T", 1)[0] if task.get("due") else None,
+                    "tasklist_title": tasklist_name,
+                }
+                for task in candidates
+            ],
+            query=query,
+            searched_tasklist=tasklist_name,
+        )
+    raise NotFoundError(
+        f"No active task matching '{query}' in tasklist '{tasklist_name}'",
+        searched_tasklist=tasklist_name,
+        query=query,
+    )
 
 
 def list_tasks(

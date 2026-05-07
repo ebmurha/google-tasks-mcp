@@ -13,7 +13,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from . import digest
-from .errors import AuthRequired, ConfigError, GoogleTasksApiError, GoogleTasksMcpError
+from .errors import AuthRequired, ConfigError, GoogleTasksApiError, GoogleTasksMcpError, InvalidInputError
 from . import tasks as tasks_api
 
 
@@ -66,6 +66,25 @@ def _resolve(tasklist: str | None = None) -> str:
 
 def _tasklist_title(tasklist_id: str) -> str:
     return tasks_api.get_tasklist_title(tasklist_id)
+
+
+def _resolve_task_id(
+    tasklist_id: str,
+    id: str | None,
+    title: str | None,
+    *,
+    include_completed: bool = False,
+) -> str:
+    if id:
+        return id
+    if title:
+        return tasks_api.resolve_task_by_title(
+            tasklist_id,
+            title,
+            include_completed=include_completed,
+            tasklist_title=_tasklist_title(tasklist_id),
+        )
+    raise InvalidInputError("Task id or title is required")
 
 
 def _today() -> date:
@@ -144,8 +163,17 @@ def search_tool(
     return digest.shrink_list(matches)
 
 
-def get_task_tool(id: str, tasklist: str | None = None) -> dict[str, Any]:
-    task = tasks_api.get_task(_resolve(tasklist), id)
+def get_task_tool(
+    id: str | None = None,
+    tasklist: str | None = None,
+    title: str | None = None,
+    include_completed: bool = False,
+) -> dict[str, Any]:
+    """Get a single task by ID or exact title, including full notes."""
+
+    tasklist_id = _resolve(tasklist)
+    task_id = _resolve_task_id(tasklist_id, id, title, include_completed=include_completed)
+    task = tasks_api.get_task(tasklist_id, task_id)
     return digest.shrink_task(task, include_notes=True)
 
 
@@ -172,11 +200,17 @@ def add_tool(
     )
 
 
-def complete_tool(id: str, tasklist: str | None = None) -> dict[str, Any]:
-    """Mark a task completed and return its rich mutation response with human_summary."""
+def complete_tool(
+    id: str | None = None,
+    tasklist: str | None = None,
+    title: str | None = None,
+    include_completed: bool = False,
+) -> dict[str, Any]:
+    """Mark a task completed by ID or exact title and return its rich mutation response."""
 
     tasklist_id = _resolve(tasklist)
-    completed = tasks_api.complete_task(tasklist_id, id)
+    task_id = _resolve_task_id(tasklist_id, id, title, include_completed=include_completed)
+    completed = tasks_api.complete_task(tasklist_id, task_id)
     return digest.build_mutation_response(
         completed,
         tasklist_id,
@@ -186,21 +220,24 @@ def complete_tool(id: str, tasklist: str | None = None) -> dict[str, Any]:
 
 
 def update_tool(
-    id: str,
+    id: str | None = None,
     title: str | None = None,
     notes: str | None = None,
     due: str | None = None,
     tasklist: str | None = None,
+    include_completed: bool = False,
 ) -> dict[str, Any]:
-    """Edit title, notes, or due date and return changed fields in human_summary."""
+    """Edit a task by ID, or by exact title when ID is omitted."""
 
     tasklist_id = _resolve(tasklist)
+    task_id = _resolve_task_id(tasklist_id, id, title, include_completed=include_completed)
+    new_title = title if id else None
     changes = [
         field
-        for field, value in (("title", title), ("notes", notes), ("due", due))
+        for field, value in (("title", new_title), ("notes", notes), ("due", due))
         if value is not None
     ]
-    updated = tasks_api.update_task(tasklist_id, id, title=title, notes=notes, due=due)
+    updated = tasks_api.update_task(tasklist_id, task_id, title=new_title, notes=notes, due=due)
     return digest.build_mutation_response(
         updated,
         tasklist_id,
@@ -210,12 +247,18 @@ def update_tool(
     )
 
 
-def delete_tool(id: str, tasklist: str | None = None) -> dict[str, Any]:
-    """Delete a task after pre-fetching it, then return its rich mutation response."""
+def delete_tool(
+    id: str | None = None,
+    tasklist: str | None = None,
+    title: str | None = None,
+    include_completed: bool = False,
+) -> dict[str, Any]:
+    """Delete a task by ID or exact title after pre-fetching it."""
 
     tasklist_id = _resolve(tasklist)
-    existing = tasks_api.get_task(tasklist_id, id)
-    tasks_api.delete_task(tasklist_id, id)
+    task_id = _resolve_task_id(tasklist_id, id, title, include_completed=include_completed)
+    existing = tasks_api.get_task(tasklist_id, task_id)
+    tasks_api.delete_task(tasklist_id, task_id)
     return digest.build_mutation_response(
         existing,
         tasklist_id,
@@ -225,15 +268,22 @@ def delete_tool(id: str, tasklist: str | None = None) -> dict[str, Any]:
     )
 
 
-def move_tool(id: str, tasklist: str, from_tasklist: str | None = None) -> dict[str, Any]:
-    """Move a task to another list and return its rich mutation response with the new ID."""
+def move_tool(
+    id: str | None = None,
+    tasklist: str | None = None,
+    from_tasklist: str | None = None,
+    title: str | None = None,
+    include_completed: bool = False,
+) -> dict[str, Any]:
+    """Move a task by ID or exact title to another list and return its rich mutation response."""
 
     target_tasklist_id = _resolve(tasklist)
     source_tasklist_id = _resolve(from_tasklist)
+    task_id = _resolve_task_id(source_tasklist_id, id, title, include_completed=include_completed)
     target_title = _tasklist_title(target_tasklist_id)
 
     if source_tasklist_id == target_tasklist_id:
-        moved = tasks_api.move_task(source_tasklist_id, id)
+        moved = tasks_api.move_task(source_tasklist_id, task_id)
         return digest.build_mutation_response(
             moved,
             target_tasklist_id,
@@ -242,14 +292,14 @@ def move_tool(id: str, tasklist: str, from_tasklist: str | None = None) -> dict[
             move_target=target_title,
         )
 
-    original = tasks_api.get_task(source_tasklist_id, id)
+    original = tasks_api.get_task(source_tasklist_id, task_id)
     moved = tasks_api.insert_task(
         target_tasklist_id,
         title=original.get("title", ""),
         notes=original.get("notes"),
         due=_due_date(original),
     )
-    tasks_api.delete_task(source_tasklist_id, id)
+    tasks_api.delete_task(source_tasklist_id, task_id)
     return digest.build_mutation_response(
         moved,
         target_tasklist_id,
