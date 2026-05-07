@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Tasklist create, read, rename, and delete tools are now available with compact responses; breaking-change: false.
 - A general task listing tool now supports Google Tasks filters and timezone-aware date ranges; breaking-change: false.
 - Completed tasks can now be cleared from a tasklist after explicit confirmation; breaking-change: false.
+- Task creation now supports subtasks and sibling positioning with optional parent and previous references; breaking-change: false.
 
 ## [0.1.0] - 2026-05-05
 

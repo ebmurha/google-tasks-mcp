@@ -220,6 +220,8 @@ def insert_task(
     title: str,
     notes: str | None = None,
     due: str | None = None,
+    parent: str | None = None,
+    previous: str | None = None,
 ) -> dict[str, Any]:
     service = _service()
     body: dict[str, Any] = {"title": title}
@@ -227,7 +229,12 @@ def insert_task(
         body["notes"] = notes
     if due is not None:
         body["due"] = date_to_rfc3339(due)
-    return _execute(service.tasks().insert(tasklist=tasklist_id, body=body))
+    params: dict[str, Any] = {"tasklist": tasklist_id, "body": body}
+    if parent is not None:
+        params["parent"] = parent
+    if previous is not None:
+        params["previous"] = previous
+    return _execute(service.tasks().insert(**params))
 
 
 def update_task(

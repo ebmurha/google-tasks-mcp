@@ -88,6 +88,25 @@ def _resolve_task_id(
     raise InvalidInputError("Task id or title is required")
 
 
+def _resolve_task_reference(tasklist_id: str, reference: str | None) -> str | None:
+    if reference is None:
+        return None
+    query = reference.strip()
+    if not query:
+        raise InvalidInputError("Task reference must not be empty")
+    for task in tasks_api.list_tasks(tasklist_id, show_completed=False, max_results=1000):
+        if task.get("deleted") is True or task.get("status") == "completed":
+            continue
+        if str(task.get("id") or "") == query:
+            return query
+    return tasks_api.resolve_task_by_title(
+        tasklist_id,
+        query,
+        include_completed=False,
+        tasklist_title=_tasklist_title(tasklist_id),
+    )
+
+
 def _today() -> date:
     return date.today()
 
@@ -174,9 +193,13 @@ def list_tasks_tool(
         max_results=bounded_max,
         page_token=page_token,
     )
+    ordered_items = sorted(
+        response.get("items", []) or [],
+        key=lambda task: str(task.get("position") or ""),
+    )
     tasks = [
         digest.full_task_object(task, tasklist_id, tasklist_title)
-        for task in response.get("items", []) or []
+        for task in ordered_items
     ]
     result: dict[str, Any] = {
         "tasks": tasks,
@@ -373,11 +396,22 @@ def add_tool(
     notes: str | None = None,
     due: str | None = None,
     tasklist: str | None = None,
+    parent: str | None = None,
+    previous: str | None = None,
 ) -> dict[str, Any]:
-    """Create a task and return its rich mutation response with human_summary."""
+    """Create a task, optionally under a parent or after a sibling by ID or exact title."""
 
     tasklist_id = _resolve(tasklist)
-    created = tasks_api.insert_task(tasklist_id, title=title, notes=notes, due=due)
+    parent_id = _resolve_task_reference(tasklist_id, parent)
+    previous_id = _resolve_task_reference(tasklist_id, previous)
+    created = tasks_api.insert_task(
+        tasklist_id,
+        title=title,
+        notes=notes,
+        due=due,
+        parent=parent_id,
+        previous=previous_id,
+    )
     return digest.build_mutation_response(
         created,
         tasklist_id,

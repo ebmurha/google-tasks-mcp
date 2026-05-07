@@ -49,6 +49,17 @@ class _TasksResource:
         self.calls.append(("clear", kwargs))
         return _Request(None)
 
+    def insert(self, **kwargs):
+        self.calls.append(("insert", kwargs))
+        body = kwargs["body"]
+        return _Request(
+            {
+                "id": "new-task",
+                "title": body["title"],
+                "parent": kwargs.get("parent"),
+            }
+        )
+
 
 class _TasklistService:
     def __init__(self):
@@ -224,3 +235,34 @@ def test_clear_completed_calls_google_clear(monkeypatch, configured_env):
 
     assert tasks.clear_completed("list-1") is None
     assert service.tasks_resource.calls == [("clear", {"tasklist": "list-1"})]
+
+
+def test_insert_task_passes_parent_and_previous(monkeypatch, configured_env):
+    service = _TasklistService()
+    monkeypatch.setattr(tasks, "_service", lambda: service)
+
+    result = tasks.insert_task(
+        "list-1",
+        title="Child",
+        notes="note",
+        due="2026-05-05",
+        parent="parent-1",
+        previous="sibling-1",
+    )
+
+    assert result == {"id": "new-task", "title": "Child", "parent": "parent-1"}
+    assert service.tasks_resource.calls == [
+        (
+            "insert",
+            {
+                "tasklist": "list-1",
+                "body": {
+                    "title": "Child",
+                    "notes": "note",
+                    "due": "2026-05-05T00:00:00.000Z",
+                },
+                "parent": "parent-1",
+                "previous": "sibling-1",
+            },
+        )
+    ]

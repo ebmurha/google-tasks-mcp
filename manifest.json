@@ -57,7 +57,7 @@
     { "name": "search", "description": "Search task titles and notes." },
     { "name": "get_task", "description": "Read one task with notes." },
     { "name": "digest", "description": "Return a short task summary." },
-    { "name": "add", "description": "Create a task." },
+    { "name": "add", "description": "Create a task or subtask." },
     { "name": "complete", "description": "Mark a task completed." },
     { "name": "update", "description": "Update a task." },
     { "name": "delete", "description": "Delete a task." },

@@ -136,14 +136,14 @@ def fake_task_store(monkeypatch, configured_env):
     def get_task(tasklist_id, task_id):
         return next(item for item in store[tasklist_id] if item["id"] == task_id)
 
-    def insert_task(tasklist_id, *, title, notes=None, due=None):
+    def insert_task(tasklist_id, *, title, notes=None, due=None, parent=None, previous=None):
         task_id = f"new-{len(store[tasklist_id]) + 1}"
         task = {
             "id": task_id,
             "title": title,
             "status": "needsAction",
             "completed": None,
-            "parent": None,
+            "parent": parent,
             "position": f"{len(store[tasklist_id]) + 1:04d}",
             "updated": "2026-05-05T12:00:00.000Z",
             "links": [],
@@ -153,7 +153,17 @@ def fake_task_store(monkeypatch, configured_env):
             task["notes"] = notes
         if due is not None:
             task["due"] = f"{due}T00:00:00.000Z" if "T" not in due else due
-        store[tasklist_id].append(task)
+        if previous:
+            for index, item in enumerate(store[tasklist_id]):
+                if item["id"] == previous:
+                    store[tasklist_id].insert(index + 1, task)
+                    break
+            else:
+                store[tasklist_id].append(task)
+        else:
+            store[tasklist_id].append(task)
+        for index, item in enumerate(store[tasklist_id], start=1):
+            item["position"] = f"{index:04d}"
         return task
 
     def complete_task(tasklist_id, task_id):
@@ -457,6 +467,36 @@ def test_add_complete_update_delete_flow(fake_task_store):
     assert deleted["deleted"] is True
     assert deleted["human_summary"] == "Deleted 'New task' from Default"
     assert fake_task_store[1][-1]["id"] == created["id"]
+
+
+def test_add_subtask_with_parent_title(fake_task_store):
+    result = server.add_tool("Child task", parent="Due today")
+
+    assert result["title"] == "Child task"
+    assert result["parent"] == "today-1"
+    assert result["human_summary"] == "Created 'Child task' in Default"
+
+
+def test_add_subtask_with_previous_title_orders_after_sibling(fake_task_store):
+    first = server.add_tool("First child", parent="Due today")
+    second = server.add_tool("Second child", parent="Due today", previous="First child")
+
+    children = [
+        task
+        for task in server.list_tasks_tool(show_completed=True)["tasks"]
+        if task.get("parent") == "today-1"
+    ]
+    assert [task["id"] for task in children] == [first["id"], second["id"]]
+    assert second["parent"] == "today-1"
+
+
+def test_add_previous_prefers_exact_id(fake_task_store):
+    first = server.add_tool("Sibling one")
+    second = server.add_tool("Sibling two", previous=first["id"])
+
+    tasks = server.list_tasks_tool(show_completed=True)["tasks"]
+    ids = [task["id"] for task in tasks]
+    assert ids.index(second["id"]) == ids.index(first["id"]) + 1
 
 
 def test_complete_by_title_succeeds_with_no_id(fake_task_store):
