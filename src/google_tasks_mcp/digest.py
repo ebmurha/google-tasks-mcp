@@ -49,6 +49,7 @@ def _human_summary(
     tasklist_title: str,
     deleted: bool,
     changes: list[str] | None,
+    move_target: str | None,
 ) -> str:
     title = str(task.get("title") or "Untitled")
     due = _date_only(task.get("due"))
@@ -64,7 +65,7 @@ def _human_summary(
     if operation == "delete" or deleted:
         return f"Deleted '{title}' from {tasklist_title}"
     if operation == "move":
-        return f"Moved '{title}' to {tasklist_title}"
+        return f"Moved '{title}' to {move_target or tasklist_title}"
     return f"{operation.title()} '{title}'"
 
 
@@ -76,6 +77,7 @@ def build_mutation_response(
     operation: str,
     deleted: bool = False,
     changes: list[str] | None = None,
+    move_target: str | None = None,
 ) -> dict[str, Any]:
     """Build the rich mutation response shape shared by write tools."""
 
@@ -99,6 +101,7 @@ def build_mutation_response(
             tasklist_title=tasklist_title,
             deleted=deleted,
             changes=changes,
+            move_target=move_target,
         ),
         **({"deleted": True} if deleted else {}),
     }

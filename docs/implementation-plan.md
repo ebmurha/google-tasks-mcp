@@ -8,6 +8,12 @@ The previous plan (v0.1.0) is archived at `docs/archive/implementation-plan-v0.1
 
 **Per-step evidence:** after finishing each step, the implementing agent must create an evidence file at `docs/evidence/step-<N>-<slug>.md` (e.g. `docs/evidence/step-0-foundation-utilities.md`) documenting commands run, test output, and any deviations. Match the format of existing files in `docs/evidence/`. The step is not "Complete" until its evidence file lands. Evidence files stay in `docs/evidence/` when the plan is archived in Step 12.
 
+**Commit messages:** describe the actual change shipped — never reference plan scaffolding like "step", "pass", "phase", or ticket numbers in the subject line. Good: `Add tasklist resolver cache with single-flight refresh`. Bad: `Step 0: foundation utilities`.
+
+**No plan scaffolding outside the plan:** never include internal plan scaffolding — step/pass/phase numbers, ticket ids, section references like `§8.4`, or any other token that only makes sense to someone holding the plan — in any markdown file or code comment (including docstrings and error messages). Describe the change itself. Good: *"Mutation tools now return rich self-describing responses with `human_summary`."* Bad: *"T1 response shape overhaul."* The only exceptions are the implementation plan itself and its evidence files — those are where scaffolding lives.
+
+**Never ignore .gitignore content** even when you are tasked to produce elements that sit under git-ignored folders.
+
 Supporting docs unchanged: `README.md`, `MCP_SERVER_GUIDE.md`, `DISTRIBUTION.md`, `docs/AGENTS.md`, `docs/google-tasks-mcp-specifications.md`.
 
 ## Scope of this release
@@ -51,12 +57,13 @@ Each step is mergeable only when all of these hold. Step-specific acceptance cri
 - [ ] All Google API calls in tests are mocked at the `googleapiclient.discovery.build` boundary — no live network in CI.
 - [ ] Tool docstrings (the LLM-facing description text) are updated for any new or modified tool.
 - [ ] `README.md` "Tools" section reflects new/modified tools and their parameters.
-- [ ] `CHANGELOG.md` entry added with the ticket id, one-line summary, and `breaking-change: false`.
+- [ ] `CHANGELOG.md` entry added: one-line user-facing summary of the change (no ticket id, no step number) and `breaking-change: false`.
 - [ ] At least one manual smoke test against the live Google account, with the result pasted into the PR description.
 - [ ] Backward compatibility: additive only — no removed or renamed parameters; new params are optional with safe defaults.
 - [ ] No raw Google envelope fields (`kind`, `etag`, `selfLink`, raw pagination tokens, full `items[]` envelopes) leak through MCP responses.
 - [ ] No secrets in logs (OAuth codes, access/refresh tokens, bearer tokens, credential file contents).
 - [ ] Errors are structured `{error, code, message, ...}` payloads, never stack traces.
+- [ ] No internal plan scaffolding (step/pass/phase numbers, ticket ids, internal section references) in any markdown file or code comment touched by this step. The implementation plan and its evidence files are the only allowed exception.
 - [ ] Evidence file written at `docs/evidence/step-<N>-<slug>.md` (commands run, test output, deviations) before the step is marked Complete.
 
 ## Step template
@@ -110,23 +117,23 @@ Every step uses this shape. Copy it when adding a new step. Drop the **Constrain
 
 ### Step 1 — Response shape overhaul (T1)
 
-- **Status:** Not started
+- **Status:** Complete
 - **Objective:** Make `add`, `complete`, `delete`, `update`, and `move` return the rich self-describing object so consumers never have to re-fetch to know what happened or display an opaque ID.
 - **Tasks / Actions:**
-  - [ ] Refactor each of the five mutation tools in `server.py` to call `digest.build_mutation_response(...)` instead of the current `shrink_task` path.
-  - [ ] For `delete`: pre-fetch the task with `tasks.get` before calling `tasks.delete`, cache the resource locally, then issue delete and return the cached fields with `deleted: true`. Accept the extra round trip — it's the readability win.
-  - [ ] For `update`: compute and pass the changed-field list into `build_mutation_response` so `human_summary` reads "Updated 'X': due, notes" (delta-aware).
-  - [ ] For `move`: pass enough context that `human_summary` can pick the right phrasing — "to <new_tasklist_title>", "to <new_parent_title>", or "after <previous_title>".
-  - [ ] Update tool docstrings to describe the new response fields.
+  - [x] Refactor each of the five mutation tools in `server.py` to call `digest.build_mutation_response(...)` instead of the current `shrink_task` path.
+  - [x] For `delete`: pre-fetch the task with `tasks.get` before calling `tasks.delete`, cache the resource locally, then issue delete and return the cached fields with `deleted: true`. Accept the extra round trip — it's the readability win.
+  - [x] For `update`: compute and pass the changed-field list into `build_mutation_response` so `human_summary` reads "Updated 'X': due, notes" (delta-aware).
+  - [x] For `move`: pass enough context that `human_summary` can pick the right phrasing — "to <new_tasklist_title>", "to <new_parent_title>", or "after <previous_title>".
+  - [x] Update tool docstrings to describe the new response fields.
 - **Tests to run:**
   - `pytest tests/test_tools.py -x`
 - **Acceptance criteria / verification checklist:**
-  - [ ] `add` response contains all 14 fields from improvements §8.2, including `human_summary`, `tasklist_title`, `web_view_link`.
-  - [ ] `complete` response contains the original `title` and pre-completion `due`.
-  - [ ] `delete` response contains pre-deletion `title` sourced from the pre-fetch, plus `deleted: true`.
-  - [ ] `update` with only `due` changed produces `human_summary` mentioning only the due-date change.
-  - [ ] `move` `human_summary` correctly picks list/parent/sibling phrasing depending on inputs.
-  - [ ] No `kind`, `etag`, or `selfLink` appears in any mutation response.
+  - [x] `add` response contains all 14 fields from improvements §8.2, including `human_summary`, `tasklist_title`, `web_view_link`.
+  - [x] `complete` response contains the original `title` and pre-completion `due`.
+  - [x] `delete` response contains pre-deletion `title` sourced from the pre-fetch, plus `deleted: true`.
+  - [x] `update` with only `due` changed produces `human_summary` mentioning only the due-date change.
+  - [x] `move` `human_summary` correctly picks list/parent/sibling phrasing depending on inputs.
+  - [x] No `kind`, `etag`, or `selfLink` appears in any mutation response.
 
 ### Step 2 — Lookup-by-title for ID-taking tools (T2)
 

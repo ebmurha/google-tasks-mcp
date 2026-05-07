@@ -76,7 +76,7 @@ They are less useful if the filesystem is ephemeral, because the OAuth refresh t
 
 ### Serverless Platforms
 
-Serverless can be awkward for this project. The MCP HTTP transport expects a reachable service, and the OAuth token store needs persistent state. It can work with an external database, but that is not the first-pass design.
+Serverless can be awkward for this project. The MCP HTTP transport expects a reachable service, and the OAuth token store needs persistent state. It can work with an external database, but that is not the default design.
 
 ### Marketplaces and Registries
 

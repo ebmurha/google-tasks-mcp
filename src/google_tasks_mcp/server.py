@@ -64,6 +64,10 @@ def _resolve(tasklist: str | None = None) -> str:
     return tasks_api.resolve_tasklist(tasklist)
 
 
+def _tasklist_title(tasklist_id: str) -> str:
+    return tasks_api.get_tasklist_title(tasklist_id)
+
+
 def _today() -> date:
     return date.today()
 
@@ -156,13 +160,29 @@ def add_tool(
     due: str | None = None,
     tasklist: str | None = None,
 ) -> dict[str, Any]:
-    created = tasks_api.insert_task(_resolve(tasklist), title=title, notes=notes, due=due)
-    return digest.shrink_task(created)
+    """Create a task and return its rich mutation response with human_summary."""
+
+    tasklist_id = _resolve(tasklist)
+    created = tasks_api.insert_task(tasklist_id, title=title, notes=notes, due=due)
+    return digest.build_mutation_response(
+        created,
+        tasklist_id,
+        _tasklist_title(tasklist_id),
+        operation="add",
+    )
 
 
-def complete_tool(id: str, tasklist: str | None = None) -> dict[str, str]:
-    completed = tasks_api.complete_task(_resolve(tasklist), id)
-    return {"id": completed.get("id", id), "status": "completed"}
+def complete_tool(id: str, tasklist: str | None = None) -> dict[str, Any]:
+    """Mark a task completed and return its rich mutation response with human_summary."""
+
+    tasklist_id = _resolve(tasklist)
+    completed = tasks_api.complete_task(tasklist_id, id)
+    return digest.build_mutation_response(
+        completed,
+        tasklist_id,
+        _tasklist_title(tasklist_id),
+        operation="complete",
+    )
 
 
 def update_tool(
@@ -172,22 +192,55 @@ def update_tool(
     due: str | None = None,
     tasklist: str | None = None,
 ) -> dict[str, Any]:
-    updated = tasks_api.update_task(_resolve(tasklist), id, title=title, notes=notes, due=due)
-    return digest.shrink_task(updated)
+    """Edit title, notes, or due date and return changed fields in human_summary."""
+
+    tasklist_id = _resolve(tasklist)
+    changes = [
+        field
+        for field, value in (("title", title), ("notes", notes), ("due", due))
+        if value is not None
+    ]
+    updated = tasks_api.update_task(tasklist_id, id, title=title, notes=notes, due=due)
+    return digest.build_mutation_response(
+        updated,
+        tasklist_id,
+        _tasklist_title(tasklist_id),
+        operation="update",
+        changes=changes,
+    )
 
 
 def delete_tool(id: str, tasklist: str | None = None) -> dict[str, Any]:
-    tasks_api.delete_task(_resolve(tasklist), id)
-    return {"id": id, "deleted": True}
+    """Delete a task after pre-fetching it, then return its rich mutation response."""
+
+    tasklist_id = _resolve(tasklist)
+    existing = tasks_api.get_task(tasklist_id, id)
+    tasks_api.delete_task(tasklist_id, id)
+    return digest.build_mutation_response(
+        existing,
+        tasklist_id,
+        _tasklist_title(tasklist_id),
+        operation="delete",
+        deleted=True,
+    )
 
 
 def move_tool(id: str, tasklist: str, from_tasklist: str | None = None) -> dict[str, Any]:
+    """Move a task to another list and return its rich mutation response with the new ID."""
+
     target_tasklist_id = _resolve(tasklist)
     source_tasklist_id = _resolve(from_tasklist)
+    target_title = _tasklist_title(target_tasklist_id)
 
     if source_tasklist_id == target_tasklist_id:
         moved = tasks_api.move_task(source_tasklist_id, id)
-        return digest.shrink_task(moved)
+        return digest.build_mutation_response(
+            moved,
+            target_tasklist_id,
+            target_title,
+            operation="move",
+            move_target=target_title,
+        )
 
     original = tasks_api.get_task(source_tasklist_id, id)
     moved = tasks_api.insert_task(
@@ -197,7 +250,13 @@ def move_tool(id: str, tasklist: str, from_tasklist: str | None = None) -> dict[
         due=_due_date(original),
     )
     tasks_api.delete_task(source_tasklist_id, id)
-    return digest.shrink_task(moved)
+    return digest.build_mutation_response(
+        moved,
+        target_tasklist_id,
+        target_title,
+        operation="move",
+        move_target=target_title,
+    )
 
 
 def create_mcp_server() -> FastMCP:

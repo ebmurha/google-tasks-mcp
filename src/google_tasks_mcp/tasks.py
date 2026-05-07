@@ -56,6 +56,10 @@ def resolve_tasklist(title_or_id: str | None = None) -> str:
     return resolver.resolve_tasklist(title_or_id)
 
 
+def get_tasklist_title(tasklist_id: str) -> str:
+    return resolver.get_tasklist_title(tasklist_id)
+
+
 def list_tasks(
     tasklist_id: str,
     *,

@@ -1,4 +1,4 @@
-# Step 0 Evidence: Foundation Utilities
+# Evidence: Foundation Utilities
 
 Date: 2026-05-07
 
@@ -8,7 +8,7 @@ Date: 2026-05-07
 - Consolidated `tasks.list_tasklists()`, `tasks.resolve_tasklist()`, and `tasks.clear_tasklist_cache()` onto the new resolver without changing their public signatures.
 - Added `src/google_tasks_mcp/timezones.py` with explicit timezone, `GOOGLE_TASKS_MCP_DEFAULT_TZ`, and pass-through resolution.
 - Added structured `NotFoundError`, `AmbiguousTitleError`, and `InvalidInputError` classes and wired them through `server._error_payload`.
-- Added `digest.build_mutation_response(...)` for the T1 mutation response shape.
+- Added `digest.build_mutation_response(...)` for the rich mutation response shape.
 - Added resolver, timezone, digest, tool-error, and wrapper regression tests.
 - Added the required changelog entry with `breaking-change: false`.
 
@@ -36,10 +36,10 @@ Observed result:
 
 ## Notes
 
-- All Google API behavior in Step 0 tests is mocked at the `googleapiclient.discovery.build` boundary by patching the resolver module's imported `build` callable.
-- No live Google account smoke test was run in this step; the change is additive infrastructure and no secrets or live OAuth credentials were used.
-- README tool documentation was not changed because Step 0 adds no tools and does not change tool signatures.
+- All Google API behavior in the new tests is mocked at the `googleapiclient.discovery.build` boundary by patching the resolver module's imported `build` callable.
+- No live Google account smoke test was run; the change is additive infrastructure and no secrets or live OAuth credentials were used.
+- README tool documentation was not changed because this work adds no tools and does not change tool signatures.
 
-## Step 0 Result
+## Result
 
-Step 0 is complete and verified.
+Foundation utilities are complete and verified.

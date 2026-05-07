@@ -61,11 +61,11 @@ args:    ["-m", "google_tasks_mcp", "--transport", "stdio"]
 | `search` | Case-insensitive title + notes search |
 | `get_task` | Single task with full notes |
 | `digest` | Short text summary (~30–100 tokens) |
-| `add` | Create a task |
-| `complete` | Mark a task done |
-| `update` | Edit title, notes, or due date |
-| `delete` | Delete a task |
-| `move` | Move a task to another list |
+| `add` | Create a task and return a rich mutation response with `human_summary` |
+| `complete` | Mark a task done and return title, due date, tasklist, and `human_summary` |
+| `update` | Edit title, notes, or due date and return changed fields in `human_summary` |
+| `delete` | Delete a task and return pre-deletion task details with `deleted: true` |
+| `move` | Move a task to another list and return the moved task details |
 
 All `tasklist` arguments accept both a list ID and a friendly title. When omitted, the server uses `DEFAULT_TASKLIST` from `.env`, or the first list returned by Google.
 
