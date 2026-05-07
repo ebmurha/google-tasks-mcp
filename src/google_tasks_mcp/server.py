@@ -159,6 +159,7 @@ def list_tasks_tool(
     tasklist_id = _resolve(tasklist)
     tasklist_title = _tasklist_title(tasklist_id)
     bounded_max = max(1, min(max_results, 1000))
+    effective_show_completed = show_completed or show_hidden
     response = tasks_api.list_tasks_page(
         tasklist_id,
         due_min=_rfc3339(due_min, tz),
@@ -166,7 +167,7 @@ def list_tasks_tool(
         completed_min=_rfc3339(completed_min, tz),
         completed_max=_rfc3339(completed_max, tz),
         updated_min=_rfc3339(updated_min, tz),
-        show_completed=show_completed,
+        show_completed=effective_show_completed,
         show_deleted=show_deleted,
         show_hidden=show_hidden,
         show_assigned=show_assigned,
@@ -186,6 +187,36 @@ def list_tasks_tool(
     if next_page_token:
         result["next_page_token"] = next_page_token
     return result
+
+
+def clear_completed_tool(tasklist: str | None = None, confirm: bool = False) -> dict[str, Any]:
+    """Hide completed tasks in a list after explicit confirmation.
+
+    Google Tasks clear hides completed tasks rather than deleting them; they can
+    reappear when listing hidden tasks.
+    """
+
+    if confirm is not True:
+        raise InvalidInputError("clear_completed requires confirm=true")
+    tasklist_id = _resolve(tasklist)
+    tasklist_title = _tasklist_title(tasklist_id)
+    completed_tasks = [
+        task
+        for task in tasks_api.list_tasks(
+            tasklist_id,
+            show_completed=True,
+            show_hidden=False,
+            max_results=1000,
+        )
+        if task.get("status") == "completed" and task.get("deleted") is not True
+    ]
+    cleared_count = len(completed_tasks)
+    tasks_api.clear_completed(tasklist_id)
+    return {
+        "cleared_count": cleared_count,
+        "tasklist_title": tasklist_title,
+        "human_summary": f"Cleared {cleared_count} completed tasks from {tasklist_title}",
+    }
 
 
 def create_tasklist_tool(title: str) -> dict[str, Any]:
@@ -479,6 +510,7 @@ def create_mcp_server() -> FastMCP:
         "update_tasklist": update_tasklist_tool,
         "delete_tasklist": delete_tasklist_tool,
         "list_tasks": list_tasks_tool,
+        "clear_completed": clear_completed_tool,
         "today": today_tool,
         "overdue": overdue_tool,
         "upcoming": upcoming_tool,

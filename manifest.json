@@ -50,6 +50,7 @@
     { "name": "update_tasklist", "description": "Rename a Google tasklist by ID." },
     { "name": "delete_tasklist", "description": "Delete a Google tasklist by ID after confirmation." },
     { "name": "list_tasks", "description": "List tasks with Google Tasks filters." },
+    { "name": "clear_completed", "description": "Hide completed tasks in a tasklist after confirmation." },
     { "name": "today", "description": "List incomplete tasks due today." },
     { "name": "overdue", "description": "List incomplete overdue tasks." },
     { "name": "upcoming", "description": "List incomplete upcoming tasks." },

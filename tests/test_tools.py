@@ -49,6 +49,15 @@ def fake_task_store(monkeypatch, configured_env):
                 "links": [],
                 "webViewLink": "https://tasks.google.com/task/done-1",
             },
+            {
+                "id": "done-2",
+                "title": "Another done task",
+                "status": "completed",
+                "completed": "2026-05-05T09:00:00.000Z",
+                "position": "0004",
+                "updated": "2026-05-05T09:00:00.000Z",
+                "links": [],
+            },
         ],
         "target": [],
     }
@@ -164,6 +173,11 @@ def fake_task_store(monkeypatch, configured_env):
         deleted_prefetches.append(get_task(tasklist_id, task_id).copy())
         store[tasklist_id] = [item for item in store[tasklist_id] if item["id"] != task_id]
 
+    def clear_completed(tasklist_id):
+        for task in store[tasklist_id]:
+            if task.get("status") == "completed":
+                task["hidden"] = True
+
     def create_tasklist(*, title):
         tasklist_id = f"list-{len(tasklists) + 1}"
         tasklist = {
@@ -197,6 +211,7 @@ def fake_task_store(monkeypatch, configured_env):
     monkeypatch.setattr(server.tasks_api, "complete_task", complete_task)
     monkeypatch.setattr(server.tasks_api, "update_task", update_task)
     monkeypatch.setattr(server.tasks_api, "delete_task", delete_task)
+    monkeypatch.setattr(server.tasks_api, "clear_completed", clear_completed)
     monkeypatch.setattr(server.tasks_api, "move_task", lambda tasklist_id, task_id: get_task(tasklist_id, task_id))
     monkeypatch.setattr(server.tasks_api, "create_tasklist", create_tasklist)
     monkeypatch.setattr(server.tasks_api, "get_tasklist", get_tasklist)
@@ -279,7 +294,7 @@ def test_list_tasks_show_completed_and_pagination(fake_task_store):
     assert result["next_page_token"] == "2"
 
     next_page = server.list_tasks_tool(show_completed=True, page_token=result["next_page_token"])
-    assert next_page["count"] == 1
+    assert next_page["count"] == 2
     assert next_page["tasks"][0]["id"] == "done-1"
 
 
@@ -326,11 +341,44 @@ def test_delete_tasklist_non_empty_requires_force(fake_task_store):
     )
     assert rejected["error"] == "INVALID_INPUT"
     assert rejected["code"] == 400
-    assert rejected["tasks_deleted_count"] == 3
+    assert rejected["tasks_deleted_count"] == 4
 
     deleted = server.delete_tasklist_tool(id="default", confirm=True, force=True)
-    assert deleted["tasks_deleted_count"] == 3
+    assert deleted["tasks_deleted_count"] == 4
     assert "default" not in fake_task_store[2]
+
+
+def test_clear_completed_requires_confirm(fake_task_store):
+    result = server._logged_tool("clear_completed", server.clear_completed_tool)()
+
+    assert result["error"] == "INVALID_INPUT"
+    assert result["code"] == 400
+    assert result["message"] == "clear_completed requires confirm=true"
+
+
+def test_clear_completed_hides_completed_tasks(fake_task_store):
+    result = server.clear_completed_tool(confirm=True)
+
+    assert result == {
+        "cleared_count": 2,
+        "tasklist_title": "Default",
+        "human_summary": "Cleared 2 completed tasks from Default",
+    }
+    assert server.list_tasks_tool(show_completed=True)["count"] == 2
+    hidden = server.list_tasks_tool(show_hidden=True)
+    assert hidden["count"] == 4
+    assert {task["id"] for task in hidden["tasks"] if task["status"] == "completed"} == {
+        "done-1",
+        "done-2",
+    }
+
+
+def test_clear_completed_empty_list_returns_zero(fake_task_store):
+    result = server.clear_completed_tool(tasklist="Target", confirm=True)
+
+    assert result["cleared_count"] == 0
+    assert result["tasklist_title"] == "Target"
+    assert result["human_summary"] == "Cleared 0 completed tasks from Target"
 
 
 def test_today_filters_and_strips_google_fields(fake_task_store):
@@ -374,17 +422,17 @@ def test_get_task_by_title_is_case_insensitive_and_exact(fake_task_store):
 def test_add_complete_update_delete_flow(fake_task_store):
     created = server.add_tool("New task", notes="note", due="2026-05-06")
     assert created == {
-        "id": "new-4",
+        "id": "new-5",
         "title": "New task",
         "notes": "note",
         "status": "needsAction",
         "due": "2026-05-06",
         "completed": None,
         "parent": None,
-        "position": "0004",
+        "position": "0005",
         "updated": "2026-05-05T12:00:00.000Z",
         "links": [],
-        "web_view_link": "https://tasks.google.com/task/new-4",
+        "web_view_link": "https://tasks.google.com/task/new-5",
         "tasklist_id": "default",
         "tasklist_title": "Default",
         "human_summary": "Created 'New task' due 2026-05-06 in Default",
@@ -547,6 +595,7 @@ def test_registered_mcp_tools_have_exact_names():
         "update_tasklist",
         "delete_tasklist",
         "list_tasks",
+        "clear_completed",
         "today",
         "overdue",
         "upcoming",

@@ -45,6 +45,10 @@ class _TasksResource:
         self.calls.append(("list", kwargs))
         return _Request({"items": [{"id": "task-1"}], "nextPageToken": "next"})
 
+    def clear(self, **kwargs):
+        self.calls.append(("clear", kwargs))
+        return _Request(None)
+
 
 class _TasklistService:
     def __init__(self):
@@ -212,3 +216,11 @@ def test_list_tasks_page_passes_supported_filters(monkeypatch, configured_env):
             },
         )
     ]
+
+
+def test_clear_completed_calls_google_clear(monkeypatch, configured_env):
+    service = _TasklistService()
+    monkeypatch.setattr(tasks, "_service", lambda: service)
+
+    assert tasks.clear_completed("list-1") is None
+    assert service.tasks_resource.calls == [("clear", {"tasklist": "list-1"})]

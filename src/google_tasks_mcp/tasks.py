@@ -261,6 +261,11 @@ def delete_task(tasklist_id: str, task_id: str) -> None:
     _execute(service.tasks().delete(tasklist=tasklist_id, task=task_id))
 
 
+def clear_completed(tasklist_id: str) -> None:
+    service = _service()
+    _execute(service.tasks().clear(tasklist=tasklist_id))
+
+
 def move_task(
     tasklist_id: str,
     task_id: str,
