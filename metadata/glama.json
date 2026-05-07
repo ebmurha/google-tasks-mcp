@@ -21,6 +21,7 @@
     "add",
     "complete",
     "update",
+    "uncomplete",
     "delete",
     "move"
   ],

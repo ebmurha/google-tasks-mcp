@@ -22,6 +22,7 @@ EXPECTED_TOOLS = [
     "add",
     "complete",
     "update",
+    "uncomplete",
     "delete",
     "move",
 ]

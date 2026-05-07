@@ -69,7 +69,8 @@ args:    ["-m", "google_tasks_mcp", "--transport", "stdio"]
 | `digest` | Short text summary (~30–100 tokens) |
 | `add` | Create a task or subtask, optionally after a sibling, and return a rich mutation response with `human_summary` |
 | `complete` | Mark a task done by ID or exact title and return title, due date, tasklist, and `human_summary` |
-| `update` | Edit a task by ID, or by exact title for non-title fields, and return changed fields in `human_summary` |
+| `update` | Edit a task by ID, or by exact title for non-title fields; `status` may be `needsAction` or `completed` |
+| `uncomplete` | Reopen a completed task by ID or exact title and return a rich mutation response |
 | `delete` | Delete a task by ID or exact title and return pre-deletion task details with `deleted: true` |
 | `move` | Move a task by ID or exact title, optionally changing tasklist, parent, or sibling order |
 

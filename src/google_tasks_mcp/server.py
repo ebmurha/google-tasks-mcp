@@ -444,26 +444,63 @@ def update_tool(
     title: str | None = None,
     notes: str | None = None,
     due: str | None = None,
+    status: str | None = None,
     tasklist: str | None = None,
     include_completed: bool = False,
 ) -> dict[str, Any]:
-    """Edit a task by ID, or by exact title when ID is omitted."""
+    """Edit a task by ID, or by exact title when ID is omitted.
+
+    status may be needsAction or completed. Setting status to needsAction
+    reopens a completed task and clears its completed timestamp in the response.
+    """
 
     tasklist_id = _resolve(tasklist)
-    task_id = _resolve_task_id(tasklist_id, id, title, include_completed=include_completed)
+    if status is not None and status not in {"needsAction", "completed"}:
+        raise InvalidInputError("status must be needsAction or completed", status=status)
+    effective_include_completed = include_completed or status == "needsAction"
+    task_id = _resolve_task_id(
+        tasklist_id,
+        id,
+        title,
+        include_completed=effective_include_completed,
+    )
     new_title = title if id else None
     changes = [
         field
-        for field, value in (("title", new_title), ("notes", notes), ("due", due))
+        for field, value in (("title", new_title), ("notes", notes), ("due", due), ("status", status))
         if value is not None
     ]
-    updated = tasks_api.update_task(tasklist_id, task_id, title=new_title, notes=notes, due=due)
+    updated = tasks_api.update_task(
+        tasklist_id,
+        task_id,
+        title=new_title,
+        notes=notes,
+        due=due,
+        status=status,
+    )
     return digest.build_mutation_response(
         updated,
         tasklist_id,
         _tasklist_title(tasklist_id),
         operation="update",
         changes=changes,
+    )
+
+
+def uncomplete_tool(
+    id: str | None = None,
+    tasklist: str | None = None,
+    title: str | None = None,
+    include_completed: bool = True,
+) -> dict[str, Any]:
+    """Reopen a completed task by ID or exact title and return its rich mutation response."""
+
+    return update_tool(
+        id=id,
+        title=title,
+        tasklist=tasklist,
+        status="needsAction",
+        include_completed=include_completed,
     )
 
 
@@ -588,6 +625,7 @@ def create_mcp_server() -> FastMCP:
         "add": add_tool,
         "complete": complete_tool,
         "update": update_tool,
+        "uncomplete": uncomplete_tool,
         "delete": delete_tool,
         "move": move_tool,
     }

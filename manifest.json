@@ -59,7 +59,8 @@
     { "name": "digest", "description": "Return a short task summary." },
     { "name": "add", "description": "Create a task or subtask." },
     { "name": "complete", "description": "Mark a task completed." },
-    { "name": "update", "description": "Update a task." },
+    { "name": "update", "description": "Update a task, including completion status." },
+    { "name": "uncomplete", "description": "Reopen a completed task." },
     { "name": "delete", "description": "Delete a task." },
     { "name": "move", "description": "Move a task to a destination tasklist, parent, or sibling position." }
   ],

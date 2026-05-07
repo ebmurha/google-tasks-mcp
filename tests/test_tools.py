@@ -196,6 +196,10 @@ def fake_task_store(monkeypatch, configured_env):
         for key, value in kwargs.items():
             if value is not None:
                 task[key] = value
+                if key == "status" and value == "needsAction":
+                    task["completed"] = None
+                elif key == "status" and value == "completed":
+                    task["completed"] = "2026-05-05T13:00:00.000Z"
         return task
 
     def delete_task(tasklist_id, task_id):
@@ -554,6 +558,57 @@ def test_update_by_id_preserves_existing_title_update_behavior(fake_task_store):
     assert result["human_summary"] == "Updated 'Renamed': title"
 
 
+def test_update_status_reopens_completed_task_by_title(fake_task_store):
+    result = server.update_tool(title="Done task", status="needsAction")
+
+    assert result["id"] == "done-1"
+    assert result["title"] == "Done task"
+    assert result["status"] == "needsAction"
+    assert result["completed"] is None
+    assert result["human_summary"] == "Updated 'Done task': status"
+
+
+def test_update_status_rejects_invalid_value(fake_task_store):
+    result = server._logged_tool("update", server.update_tool)(
+        id="today-1",
+        status="open",
+    )
+
+    assert result["error"] == "INVALID_INPUT"
+    assert result["code"] == 400
+    assert result["status"] == "open"
+
+
+def test_uncomplete_reopens_completed_task_by_title(fake_task_store):
+    result = server.uncomplete_tool(title="Done task")
+
+    assert result["id"] == "done-1"
+    assert result["title"] == "Done task"
+    assert result["status"] == "needsAction"
+    assert result["completed"] is None
+    assert result["human_summary"] == "Updated 'Done task': status"
+
+
+def test_complete_then_uncomplete_preserves_task_fields(fake_task_store):
+    created = server.add_tool(
+        "Round trip",
+        notes="keep notes",
+        due="2026-05-09",
+        parent="Due today",
+    )
+    completed = server.complete_tool(id=created["id"])
+    reopened = server.uncomplete_tool(id=created["id"])
+
+    assert completed["status"] == "completed"
+    assert reopened["status"] == "needsAction"
+    assert reopened["completed"] is None
+    assert reopened["title"] == created["title"]
+    assert reopened["notes"] == created["notes"]
+    assert reopened["due"] == created["due"]
+    assert reopened["parent"] == created["parent"]
+    assert reopened["position"] == created["position"]
+
+
 def test_title_lookup_excludes_completed_by_default(fake_task_store):
     result = server._logged_tool("get_task", server.get_task_tool)(title="Done task")
 
@@ -732,6 +787,7 @@ def test_registered_mcp_tools_have_exact_names():
         "add",
         "complete",
         "update",
+        "uncomplete",
         "delete",
         "move",
     ]
