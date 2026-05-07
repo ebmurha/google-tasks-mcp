@@ -2,21 +2,15 @@
 
 from __future__ import annotations
 
-import time
 from datetime import date, datetime, timezone
 from typing import Any
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from . import db
 from .auth import get_credentials
-from .config import get_settings
+from . import resolver
 from .errors import GoogleTasksApiError
-
-
-TASKLIST_CACHE_SECONDS = 300
-_tasklist_cache: tuple[float, list[dict[str, Any]]] | None = None
 
 
 def _service() -> Any:
@@ -31,8 +25,7 @@ def _execute(request: Any) -> Any:
 
 
 def clear_tasklist_cache() -> None:
-    global _tasklist_cache
-    _tasklist_cache = None
+    resolver.invalidate()
 
 
 def date_to_rfc3339(value: str | date | datetime | None) -> str | None:
@@ -56,48 +49,11 @@ def date_to_rfc3339(value: str | date | datetime | None) -> str | None:
 
 
 def list_tasklists() -> list[dict[str, Any]]:
-    global _tasklist_cache
-
-    now = time.time()
-    if _tasklist_cache and now - _tasklist_cache[0] < TASKLIST_CACHE_SECONDS:
-        return list(_tasklist_cache[1])
-
-    service = _service()
-    result = _execute(service.tasklists().list(maxResults=100))
-    tasklists = result.get("items", []) if isinstance(result, dict) else []
-    compact = [
-        {"id": item["id"], "title": item.get("title", "")}
-        for item in tasklists
-        if item.get("id")
-    ]
-    for item in compact:
-        db.upsert_tasklist(item["id"], item["title"])
-    _tasklist_cache = (now, compact)
-    return list(compact)
+    return resolver.list_tasklists()
 
 
 def resolve_tasklist(title_or_id: str | None = None) -> str:
-    settings = get_settings()
-    requested = (title_or_id or settings.default_tasklist or "").strip()
-
-    cached = db.list_tasklists_cached()
-    if requested:
-        for item in cached:
-            if requested == item.id or requested.casefold() == item.title.casefold():
-                return item.id
-
-    tasklists = list_tasklists()
-    if not tasklists:
-        raise GoogleTasksApiError("No Google tasklists were found")
-
-    if requested:
-        for item in tasklists:
-            title = item.get("title", "")
-            if requested == item.get("id") or requested.casefold() == title.casefold():
-                return item["id"]
-        raise GoogleTasksApiError(f"Tasklist not found: {requested}")
-
-    return tasklists[0]["id"]
+    return resolver.resolve_tasklist(title_or_id)
 
 
 def list_tasks(

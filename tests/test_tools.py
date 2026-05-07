@@ -5,6 +5,7 @@ from datetime import date
 import pytest
 
 from google_tasks_mcp import server
+from google_tasks_mcp.errors import AmbiguousTitleError, InvalidInputError, NotFoundError
 
 
 @pytest.fixture
@@ -186,3 +187,26 @@ def test_registered_mcp_tools_have_exact_names():
         "delete",
         "move",
     ]
+
+
+def test_error_payload_for_structured_errors():
+    assert server._error_payload(NotFoundError("Missing task", query="Friday ship")) == {
+        "error": "NOT_FOUND",
+        "code": 404,
+        "message": "Missing task",
+        "query": "Friday ship",
+    }
+    assert server._error_payload(
+        AmbiguousTitleError("Multiple tasklists match title 'Work'", candidates=[{"id": "a"}])
+    ) == {
+        "error": "AMBIGUOUS_TITLE",
+        "code": 409,
+        "message": "Multiple tasklists match title 'Work'",
+        "candidates": [{"id": "a"}],
+    }
+    assert server._error_payload(InvalidInputError("Invalid timezone: Bad/TZ", timezone="Bad/TZ")) == {
+        "error": "INVALID_INPUT",
+        "code": 400,
+        "message": "Invalid timezone: Bad/TZ",
+        "timezone": "Bad/TZ",
+    }

@@ -21,7 +21,15 @@ LOGGER = logging.getLogger(__name__)
 F = TypeVar("F", bound=Callable[..., Any])
 
 
-def _error_payload(exc: Exception) -> dict[str, str]:
+def _error_payload(exc: Exception) -> dict[str, Any]:
+    if isinstance(exc, GoogleTasksMcpError) and hasattr(exc, "error"):
+        if getattr(exc, "code", 500) in {400, 404, 409}:
+            return {
+                "error": exc.error,
+                "code": exc.code,
+                "message": exc.message or str(exc),
+                **exc.details,
+            }
     if isinstance(exc, AuthRequired):
         return {"error": str(exc), "hint": "Run scripts/bootstrap_oauth.py"}
     if isinstance(exc, ConfigError):

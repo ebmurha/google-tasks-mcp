@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from google_tasks_mcp import db, tasks
+from google_tasks_mcp import tasks
 from google_tasks_mcp.errors import GoogleTasksApiError
 
 
@@ -26,14 +26,15 @@ def test_date_to_rfc3339_rejects_bad_date():
         tasks.date_to_rfc3339("05/05/2026")
 
 
-def test_resolve_tasklist_uses_cached_id(configured_env):
-    db.upsert_tasklist("abc", "Inbox")
+def test_resolve_tasklist_delegates_to_resolver(monkeypatch, configured_env):
+    calls = []
+    monkeypatch.setattr(tasks.resolver, "resolve_tasklist", lambda value=None: calls.append(value) or "abc")
 
-    assert tasks.resolve_tasklist("abc") == "abc"
     assert tasks.resolve_tasklist("inbox") == "abc"
+    assert calls == ["inbox"]
 
 
 def test_resolve_tasklist_uses_first_when_no_default(monkeypatch, configured_env):
-    monkeypatch.setattr(tasks, "list_tasklists", lambda: [{"id": "first", "title": "First"}])
+    monkeypatch.setattr(tasks.resolver, "resolve_tasklist", lambda value=None: "first")
 
     assert tasks.resolve_tasklist() == "first"

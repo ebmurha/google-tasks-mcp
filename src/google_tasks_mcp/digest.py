@@ -42,6 +42,68 @@ def shrink_task(t: dict[str, Any], *, include_notes: bool = False) -> dict[str, 
     return compact
 
 
+def _human_summary(
+    task: dict[str, Any],
+    *,
+    operation: str,
+    tasklist_title: str,
+    deleted: bool,
+    changes: list[str] | None,
+) -> str:
+    title = str(task.get("title") or "Untitled")
+    due = _date_only(task.get("due"))
+    if operation == "add":
+        due_phrase = f" due {due}" if due else ""
+        return f"Created '{title}'{due_phrase} in {tasklist_title}"
+    if operation == "complete":
+        due_phrase = f" (was due {due})" if due else ""
+        return f"Completed '{title}'{due_phrase}"
+    if operation == "update":
+        changed = ", ".join(changes or []) or "fields"
+        return f"Updated '{title}': {changed}"
+    if operation == "delete" or deleted:
+        return f"Deleted '{title}' from {tasklist_title}"
+    if operation == "move":
+        return f"Moved '{title}' to {tasklist_title}"
+    return f"{operation.title()} '{title}'"
+
+
+def build_mutation_response(
+    task: dict[str, Any],
+    tasklist_id: str,
+    tasklist_title: str,
+    *,
+    operation: str,
+    deleted: bool = False,
+    changes: list[str] | None = None,
+) -> dict[str, Any]:
+    """Build the rich mutation response shape shared by write tools."""
+
+    return {
+        "id": task.get("id"),
+        "title": task.get("title", ""),
+        "notes": task.get("notes"),
+        "status": task.get("status", "needsAction"),
+        "due": _date_only(task.get("due")),
+        "completed": task.get("completed"),
+        "parent": task.get("parent"),
+        "position": task.get("position"),
+        "updated": task.get("updated"),
+        "links": task.get("links", []),
+        "web_view_link": task.get("webViewLink"),
+        "tasklist_id": tasklist_id,
+        "tasklist_title": tasklist_title,
+        "human_summary": _human_summary(
+            task,
+            operation=operation,
+            tasklist_title=tasklist_title,
+            deleted=deleted,
+            changes=changes,
+        ),
+        **({"deleted": True} if deleted else {}),
+    }
+
+
 def shrink_list(tasks: list[dict[str, Any]], *, include_notes: bool = False) -> dict[str, Any]:
     return {
         "count": len(tasks),
