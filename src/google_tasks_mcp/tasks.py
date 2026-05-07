@@ -152,21 +152,32 @@ def list_tasks(
     max_results: int = 100,
     page_token: str | None = None,
 ) -> list[dict[str, Any]]:
-    result = list_tasks_page(
-        tasklist_id,
-        show_completed=show_completed,
-        show_deleted=show_deleted,
-        show_hidden=show_hidden,
-        show_assigned=show_assigned,
-        due_min=due_min,
-        due_max=due_max,
-        completed_min=completed_min,
-        completed_max=completed_max,
-        updated_min=updated_min,
-        max_results=max_results,
-        page_token=page_token,
-    )
-    return result.get("items", []) if isinstance(result, dict) else []
+    bounded_max = max(1, min(max_results, 1000))
+    items: list[dict[str, Any]] = []
+    next_page_token = page_token
+    while len(items) < bounded_max:
+        result = list_tasks_page(
+            tasklist_id,
+            show_completed=show_completed,
+            show_deleted=show_deleted,
+            show_hidden=show_hidden,
+            show_assigned=show_assigned,
+            due_min=due_min,
+            due_max=due_max,
+            completed_min=completed_min,
+            completed_max=completed_max,
+            updated_min=updated_min,
+            max_results=min(bounded_max - len(items), 100),
+            page_token=next_page_token,
+        )
+        if not isinstance(result, dict):
+            break
+        page_items = result.get("items", []) or []
+        items.extend(page_items)
+        next_page_token = result.get("nextPageToken")
+        if not next_page_token or not page_items:
+            break
+    return items
 
 
 def list_tasks_page(

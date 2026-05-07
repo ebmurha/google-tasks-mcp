@@ -59,7 +59,7 @@ args:    ["-m", "google_tasks_mcp", "--transport", "stdio"]
 | `get_tasklist` | Get a task list by ID or exact title |
 | `update_tasklist` | Rename a task list by ID only |
 | `delete_tasklist` | Delete a task list by ID after `confirm: true`; non-empty lists require `force: true` |
-| `list_tasks` | List tasks with date, completion, deleted, hidden, assigned, pagination, and timezone filters |
+| `list_tasks` | List tasks with date, completion, deleted, hidden, assigned, pagination, and timezone filters; auto-fetches up to 1000 tasks |
 | `clear_completed` | Hide completed tasks in a list after `confirm: true` and report `cleared_count` |
 | `today` | Incomplete tasks due today |
 | `overdue` | Incomplete overdue tasks |

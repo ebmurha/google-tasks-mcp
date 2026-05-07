@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - Task creation now supports subtasks and sibling positioning with optional parent and previous references; breaking-change: false.
 - Task moves now support destination tasklists, parent changes, sibling ordering, and top-level moves; breaking-change: false.
 - Completed tasks can now be reopened with `update.status` or the `uncomplete` tool; breaking-change: false.
+- Task listing now auto-paginates up to 1000 tasks and returns a continuation token when truncated; breaking-change: false.
 
 ## [0.1.0] - 2026-05-05
 

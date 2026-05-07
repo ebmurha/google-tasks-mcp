@@ -63,6 +63,7 @@ def fake_task_store(monkeypatch, configured_env):
     }
     deleted_prefetches = []
     invalidations = []
+    page_calls = []
 
     monkeypatch.setattr(server, "_today", lambda: date(2026, 5, 5))
     monkeypatch.setattr(
@@ -125,8 +126,9 @@ def fake_task_store(monkeypatch, configured_env):
         return _filtered_items(tasklist_id, **kwargs)
 
     def list_tasks_page(tasklist_id, *, page_token=None, max_results=100, **kwargs):
+        page_calls.append({"tasklist_id": tasklist_id, "page_token": page_token, "max_results": max_results})
         offset = int(page_token or "0")
-        items = _filtered_items(tasklist_id, max_results=1000, **kwargs)
+        items = _filtered_items(tasklist_id, max_results=10000, **kwargs)
         page = items[offset : offset + max_results]
         result = {"items": page}
         if offset + max_results < len(items):
@@ -251,7 +253,7 @@ def fake_task_store(monkeypatch, configured_env):
     monkeypatch.setattr(server.tasks_api, "update_tasklist", update_tasklist)
     monkeypatch.setattr(server.tasks_api, "delete_tasklist", delete_tasklist)
     monkeypatch.setattr(server.tasks_api, "clear_tasklist_cache", lambda: invalidations.append(True))
-    return store, deleted_prefetches, tasklists, invalidations
+    return store, deleted_prefetches, tasklists, invalidations, page_calls
 
 
 def test_list_tasklists_is_compact(fake_task_store):
@@ -325,10 +327,87 @@ def test_list_tasks_show_completed_and_pagination(fake_task_store):
     assert result["count"] == 2
     assert [task["id"] for task in result["tasks"]] == ["today-1", "old-1"]
     assert result["next_page_token"] == "2"
+    assert result["truncated"] is True
 
     next_page = server.list_tasks_tool(show_completed=True, page_token=result["next_page_token"])
     assert next_page["count"] == 2
     assert next_page["tasks"][0]["id"] == "done-1"
+    assert "next_page_token" not in next_page
+    assert "truncated" not in next_page
+
+
+def test_list_tasks_auto_paginates_multiple_pages(fake_task_store):
+    store, _deleted, _tasklists, _invalidations, page_calls = fake_task_store
+    store["default"] = [
+        {
+            "id": f"task-{index:03d}",
+            "title": f"Task {index:03d}",
+            "status": "needsAction",
+            "position": f"{index:04d}",
+            "links": [],
+        }
+        for index in range(150)
+    ]
+    page_calls.clear()
+
+    result = server.list_tasks_tool(max_results=150)
+
+    assert result["count"] == 150
+    assert result["tasks"][0]["id"] == "task-000"
+    assert result["tasks"][-1]["id"] == "task-149"
+    assert "next_page_token" not in result
+    assert "truncated" not in result
+    assert [call["max_results"] for call in page_calls] == [100, 50]
+    assert [call["page_token"] for call in page_calls] == [None, "100"]
+
+
+def test_list_tasks_caps_at_1000_and_returns_continuation_token(fake_task_store):
+    store, _deleted, _tasklists, _invalidations, page_calls = fake_task_store
+    store["default"] = [
+        {
+            "id": f"task-{index:04d}",
+            "title": f"Task {index:04d}",
+            "status": "needsAction",
+            "position": f"{index:05d}",
+            "links": [],
+        }
+        for index in range(1500)
+    ]
+    page_calls.clear()
+
+    result = server.list_tasks_tool(max_results=1500)
+
+    assert result["count"] == 1000
+    assert result["truncated"] is True
+    assert result["next_page_token"] == "1000"
+    assert result["tasks"][0]["id"] == "task-0000"
+    assert result["tasks"][-1]["id"] == "task-0999"
+    assert len(page_calls) == 10
+    assert all(call["max_results"] == 100 for call in page_calls)
+
+
+def test_list_tasks_continuation_token_fetches_next_page(fake_task_store):
+    store, _deleted, _tasklists, _invalidations, page_calls = fake_task_store
+    store["default"] = [
+        {
+            "id": f"task-{index:04d}",
+            "title": f"Task {index:04d}",
+            "status": "needsAction",
+            "position": f"{index:05d}",
+            "links": [],
+        }
+        for index in range(1500)
+    ]
+    page_calls.clear()
+
+    result = server.list_tasks_tool(page_token="1000", max_results=1000)
+
+    assert result["count"] == 500
+    assert result["tasks"][0]["id"] == "task-1000"
+    assert result["tasks"][-1]["id"] == "task-1499"
+    assert "next_page_token" not in result
+    assert "truncated" not in result
+    assert page_calls[0]["page_token"] == "1000"
 
 
 def test_list_tasks_timezone_changes_bare_date_filters(monkeypatch, fake_task_store):

@@ -40,9 +40,18 @@ class _TasklistsResource:
 class _TasksResource:
     def __init__(self):
         self.calls = []
+        self.list_items = None
 
     def list(self, **kwargs):
         self.calls.append(("list", kwargs))
+        if self.list_items is not None:
+            offset = int(kwargs.get("pageToken") or "0")
+            max_results = kwargs.get("maxResults", 100)
+            page = self.list_items[offset : offset + max_results]
+            response = {"items": page}
+            if offset + max_results < len(self.list_items):
+                response["nextPageToken"] = str(offset + max_results)
+            return _Request(response)
         return _Request({"items": [{"id": "task-1"}], "nextPageToken": "next"})
 
     def clear(self, **kwargs):
@@ -236,6 +245,22 @@ def test_list_tasks_page_passes_supported_filters(monkeypatch, configured_env):
                 "updatedMin": "2026-05-04T00:00:00.000Z",
             },
         )
+    ]
+
+
+def test_list_tasks_auto_paginates_to_requested_cap(monkeypatch, configured_env):
+    service = _TasklistService()
+    service.tasks_resource.list_items = [{"id": f"task-{index:03d}"} for index in range(150)]
+    monkeypatch.setattr(tasks, "_service", lambda: service)
+
+    result = tasks.list_tasks("list-1", max_results=150)
+
+    assert len(result) == 150
+    assert result[0]["id"] == "task-000"
+    assert result[-1]["id"] == "task-149"
+    assert service.tasks_resource.calls == [
+        ("list", {"tasklist": "list-1", "showCompleted": False, "showDeleted": False, "showHidden": False, "showAssigned": False, "maxResults": 100}),
+        ("list", {"tasklist": "list-1", "showCompleted": False, "showDeleted": False, "showHidden": False, "showAssigned": False, "maxResults": 50, "pageToken": "100"}),
     ]
 
 

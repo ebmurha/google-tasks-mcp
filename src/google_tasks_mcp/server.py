@@ -172,29 +172,45 @@ def list_tasks_tool(
     page_token: str | None = None,
     timezone: str | None = None,
 ) -> dict[str, Any]:
-    """List tasks with Google Tasks filters and compact rich task objects."""
+    """List tasks with Google Tasks filters, auto-paginating up to 1000 tasks."""
 
     tz = timezones.resolve_timezone(timezone)
     tasklist_id = _resolve(tasklist)
     tasklist_title = _tasklist_title(tasklist_id)
     bounded_max = max(1, min(max_results, 1000))
     effective_show_completed = show_completed or show_hidden
-    response = tasks_api.list_tasks_page(
-        tasklist_id,
-        due_min=_rfc3339(due_min, tz),
-        due_max=_rfc3339(due_max, tz),
-        completed_min=_rfc3339(completed_min, tz),
-        completed_max=_rfc3339(completed_max, tz),
-        updated_min=_rfc3339(updated_min, tz),
-        show_completed=effective_show_completed,
-        show_deleted=show_deleted,
-        show_hidden=show_hidden,
-        show_assigned=show_assigned,
-        max_results=bounded_max,
-        page_token=page_token,
-    )
+    due_min_value = _rfc3339(due_min, tz)
+    due_max_value = _rfc3339(due_max, tz)
+    completed_min_value = _rfc3339(completed_min, tz)
+    completed_max_value = _rfc3339(completed_max, tz)
+    updated_min_value = _rfc3339(updated_min, tz)
+    items: list[dict[str, Any]] = []
+    next_page_token = page_token
+
+    while len(items) < bounded_max:
+        remaining = bounded_max - len(items)
+        response = tasks_api.list_tasks_page(
+            tasklist_id,
+            due_min=due_min_value,
+            due_max=due_max_value,
+            completed_min=completed_min_value,
+            completed_max=completed_max_value,
+            updated_min=updated_min_value,
+            show_completed=effective_show_completed,
+            show_deleted=show_deleted,
+            show_hidden=show_hidden,
+            show_assigned=show_assigned,
+            max_results=min(remaining, 100),
+            page_token=next_page_token,
+        )
+        page_items = response.get("items", []) or []
+        items.extend(page_items)
+        next_page_token = response.get("nextPageToken")
+        if not next_page_token or not page_items:
+            break
+
     ordered_items = sorted(
-        response.get("items", []) or [],
+        items,
         key=lambda task: str(task.get("position") or ""),
     )
     tasks = [
@@ -206,9 +222,9 @@ def list_tasks_tool(
         "count": len(tasks),
         "tasklist_title": tasklist_title,
     }
-    next_page_token = response.get("nextPageToken")
     if next_page_token:
         result["next_page_token"] = next_page_token
+        result["truncated"] = True
     return result
 
 
