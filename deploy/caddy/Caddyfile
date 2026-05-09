@@ -1,20 +1,19 @@
 {$GOOGLE_TASKS_MCP_DOMAIN:tasks.example.com} {
     encode zstd gzip
 
-    handle /healthz {
-        reverse_proxy 127.0.0.1:8787
+    # Proxy everything to the ASGI app.
+    # The OAuth gateway serves /.well-known/oauth-authorization-server,
+    # /authorize, /token, /revoke alongside /healthz, /callback, and /mcp.
+    reverse_proxy 127.0.0.1:8787 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
     }
 
-    handle /callback* {
-        reverse_proxy 127.0.0.1:8787
-    }
-
-    handle /mcp* {
-        reverse_proxy 127.0.0.1:8787
-    }
-
-    handle {
-        respond "Not found" 404
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer
     }
 
     log {

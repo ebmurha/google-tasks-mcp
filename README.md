@@ -50,6 +50,14 @@ args:    ["-m", "google_tasks_mcp", "--transport", "stdio"]
 
 `MCP_BEARER_TOKEN` is not required for stdio.
 
+## Authentication modes
+
+The HTTP server starts in one of two modes depending on environment variables:
+
+**Bearer-token mode** (default, when `MCP_OAUTH_ISSUER` is not set) — `/mcp` requires `Authorization: Bearer <MCP_BEARER_TOKEN>`. Right for Claude Desktop, Codex, and any client that holds a pre-configured token.
+
+**OAuth 2.0 gateway mode** (when `MCP_OAUTH_ISSUER` is set) — the server also serves `/.well-known/oauth-authorization-server`, `/authorize`, `/token`, and `/revoke`. `/mcp` accepts both OAuth-issued tokens and the legacy `MCP_BEARER_TOKEN`. Right for MCP web clients (e.g. Claude.ai) that perform a full OAuth flow. See `.env.example` for the required variables (`MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET`, `MCP_OAUTH_SIGNING_SECRET`). `MCP_OAUTH_REDIRECT_URIS` is optional — leave it unset to keep OAuth disabled even when `MCP_OAUTH_ISSUER` is present.
+
 ## Tools
 
 | Tool | What it does |

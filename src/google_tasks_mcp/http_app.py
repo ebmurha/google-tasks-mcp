@@ -5,6 +5,7 @@ from __future__ import annotations
 import hmac
 import html
 import logging
+import os
 from collections.abc import Awaitable, Callable
 
 from starlette.applications import Starlette
@@ -12,6 +13,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
+from starlette.types import ASGIApp
+
+from mcp_oauth_gateway import add_mcp_oauth_gateway
 
 from .config import get_settings
 from .errors import ConfigError
@@ -66,7 +70,7 @@ async def callback(request: Request) -> HTMLResponse:
     return HTMLResponse(body)
 
 
-def create_app() -> Starlette:
+def _build_starlette_app() -> Starlette:
     mcp_server = create_mcp_server()
     mcp_app = mcp_server.streamable_http_app()
     mcp_route = next(route for route in mcp_app.routes if getattr(route, "path", None) == "/mcp")
@@ -82,9 +86,26 @@ def create_app() -> Starlette:
 
 
 def create_protected_app() -> Starlette:
-    app = create_app()
-    app.add_middleware(BearerAuthMiddleware)
-    return app
+    """Build the app with simple bearer-token auth (no OAuth gateway)."""
+    starlette_app = _build_starlette_app()
+    starlette_app.add_middleware(BearerAuthMiddleware)
+    return starlette_app
 
 
-app = create_protected_app()
+def create_app() -> ASGIApp:
+    """Build the app with the OAuth 2.0 authorization-server gateway."""
+    raw_uris = os.environ.get("MCP_OAUTH_REDIRECT_URIS", "")
+    redirect_uris = [u.strip() for u in raw_uris.split(",") if u.strip()]
+    return add_mcp_oauth_gateway(
+        _build_starlette_app(),
+        issuer=os.environ["MCP_OAUTH_ISSUER"],
+        client_id=os.environ["MCP_OAUTH_CLIENT_ID"],
+        client_secret=os.environ["MCP_OAUTH_CLIENT_SECRET"],
+        signing_secret=os.environ["MCP_OAUTH_SIGNING_SECRET"],
+        admin_password=os.environ.get("MCP_OAUTH_ADMIN_PASSWORD"),
+        static_bearer_token=os.environ.get("MCP_BEARER_TOKEN"),
+        allowed_redirect_uris=redirect_uris,
+    )
+
+
+app: ASGIApp = create_app() if os.environ.get("MCP_OAUTH_ISSUER") else create_protected_app()

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- OAuth 2.0 authorization-server gateway (`mcp_oauth_gateway`) wraps the HTTP app, enabling Claude.ai web and other OAuth clients to authenticate without a static bearer token. Legacy `MCP_BEARER_TOKEN` continues to work alongside OAuth-issued tokens.
+- `MCP_OAUTH_REDIRECT_URIS` env var controls which redirect URIs are accepted; unset means Bearer-only mode with no startup error.
+- `python-multipart` added as a runtime dependency (required for OAuth form parsing).
+
 ## [0.2.0] - 2026-05-07
 
 ### Added
