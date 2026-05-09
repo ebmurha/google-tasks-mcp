@@ -78,3 +78,24 @@ def test_oauth_gateway_accepts_legacy_bearer_token(configured_env, monkeypatch):
 
     assert response.status_code == 200
     assert '"protocolVersion":"2025-11-25"' in response.text
+
+
+def test_oauth_gateway_serves_discovery_and_support_routes(configured_env, monkeypatch):
+    monkeypatch.setenv("MCP_OAUTH_ISSUER", "https://tasks.example.com")
+    monkeypatch.setenv("MCP_OAUTH_CLIENT_ID", "mcp-client")
+    monkeypatch.setenv("MCP_OAUTH_CLIENT_SECRET", "mcp-client-secret")
+    monkeypatch.setenv("MCP_OAUTH_SIGNING_SECRET", "x" * 64)
+    reset_settings_cache()
+
+    with TestClient(create_app()) as client:
+        discovery = client.get("/.well-known/oauth-authorization-server")
+        healthz = client.get("/healthz")
+        callback = client.get("/callback?code=<abc>")
+
+    assert discovery.status_code == 200
+    assert discovery.json()["issuer"] == "https://tasks.example.com"
+    assert discovery.json()["authorization_endpoint"] == "https://tasks.example.com/authorize"
+    assert healthz.status_code == 200
+    assert healthz.json() == {"ok": True}
+    assert callback.status_code == 200
+    assert "&lt;abc&gt;" in callback.text
