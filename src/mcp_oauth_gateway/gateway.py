@@ -100,6 +100,10 @@ class _CombinedApp:
         self._prefix = mcp_path_prefix
 
     async def __call__(self, scope, receive, send):
+        if scope["type"] == "lifespan":
+            await self._mcp(scope, receive, send)
+            return
+
         if scope["type"] in ("http", "websocket"):
             path = scope.get("path", "")
             if path.startswith(self._prefix):

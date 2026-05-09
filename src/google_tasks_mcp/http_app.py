@@ -13,7 +13,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
-from starlette.types import ASGIApp
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from mcp_oauth_gateway import add_mcp_oauth_gateway
 
@@ -108,4 +108,19 @@ def create_app() -> ASGIApp:
     )
 
 
-app: ASGIApp = create_app() if os.environ.get("MCP_OAUTH_ISSUER") else create_protected_app()
+class EnvironmentApp:
+    """Create the configured ASGI app lazily when the server starts."""
+
+    def __init__(self) -> None:
+        self._app: ASGIApp | None = None
+
+    def _get_app(self) -> ASGIApp:
+        if self._app is None:
+            self._app = create_app() if os.environ.get("MCP_OAUTH_ISSUER") else create_protected_app()
+        return self._app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        await self._get_app()(scope, receive, send)
+
+
+app: ASGIApp = EnvironmentApp()
