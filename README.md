@@ -60,6 +60,8 @@ The HTTP server starts in one of two modes depending on environment variables:
 
 ## Tools
 
+The same 19 tools are available over local stdio, bearer-token HTTP, and OAuth 2.0 gateway HTTP modes.
+
 | Tool | What it does |
 |------|--------------|
 | `list_tasklists` | List your task lists |
