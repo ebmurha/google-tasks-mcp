@@ -89,9 +89,8 @@ def add_mcp_oauth_gateway(
 
 class _CombinedApp:
     """
-    Routes:
-      /mcp*            -> MCPAuthMiddleware -> mcp_app
-      everything else  -> oauth_router (discovery, /authorize, /token, /revoke)
+    Routes OAuth endpoints to oauth_router and everything else to the MCP app.
+    The MCP app also owns support routes such as /healthz and /callback.
     """
 
     def __init__(self, oauth_router, protected_mcp, mcp_path_prefix: str):
@@ -106,7 +105,20 @@ class _CombinedApp:
 
         if scope["type"] in ("http", "websocket"):
             path = scope.get("path", "")
-            if path.startswith(self._prefix):
-                await self._mcp(scope, receive, send)
+            if self._is_oauth_path(path):
+                await self._oauth(scope, receive, send)
                 return
-        await self._oauth(scope, receive, send)
+
+        await self._mcp(scope, receive, send)
+
+    @staticmethod
+    def _is_oauth_path(path: str) -> bool:
+        return path.startswith(
+            (
+                "/.well-known/",
+                "/authorize",
+                "/token",
+                "/revoke",
+                "/register",
+            )
+        )
