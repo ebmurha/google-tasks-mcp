@@ -2,22 +2,49 @@
 
 from __future__ import annotations
 
+import hmac
 import html
 import logging
 import os
+from collections.abc import Awaitable, Callable
 
 from starlette.applications import Starlette
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
 from starlette.types import ASGIApp
 
 from mcp_oauth_gateway import add_mcp_oauth_gateway
 
+from .config import get_settings
+from .errors import ConfigError
 from .server import create_mcp_server
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+class BearerAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        if not request.url.path.startswith("/mcp"):
+            return await call_next(request)
+
+        try:
+            expected = get_settings(require_bearer_token=True).mcp_bearer_token
+        except ConfigError:
+            LOGGER.error("MCP bearer token is not configured")
+            return JSONResponse({"error": "Server authentication is not configured"}, status_code=500)
+
+        authorization = request.headers.get("authorization", "")
+        if not hmac.compare_digest(authorization, f"Bearer {expected}"):
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        return await call_next(request)
 
 
 async def healthz(_request: Request) -> JSONResponse:
@@ -58,12 +85,19 @@ def _build_starlette_app() -> Starlette:
     )
 
 
+def create_protected_app() -> Starlette:
+    """Build the app with simple bearer-token auth (no OAuth gateway)."""
+    starlette_app = _build_starlette_app()
+    starlette_app.add_middleware(BearerAuthMiddleware)
+    return starlette_app
+
+
 def create_app() -> ASGIApp:
-    raw_mcp_app = _build_starlette_app()
+    """Build the app with the OAuth 2.0 authorization-server gateway."""
     raw_uris = os.environ.get("MCP_OAUTH_REDIRECT_URIS", "")
     redirect_uris = [u.strip() for u in raw_uris.split(",") if u.strip()]
     return add_mcp_oauth_gateway(
-        raw_mcp_app,
+        _build_starlette_app(),
         issuer=os.environ["MCP_OAUTH_ISSUER"],
         client_id=os.environ["MCP_OAUTH_CLIENT_ID"],
         client_secret=os.environ["MCP_OAUTH_CLIENT_SECRET"],
@@ -74,4 +108,4 @@ def create_app() -> ASGIApp:
     )
 
 
-app = create_app()
+app: ASGIApp = create_app() if os.environ.get("MCP_OAUTH_ISSUER") else create_protected_app()
