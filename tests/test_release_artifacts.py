@@ -8,7 +8,7 @@ import google_tasks_mcp
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "0.2.0"
+EXPECTED_VERSION = "0.3.0"
 EXPECTED_TOOLS = [
     "list_tasklists",
     "create_tasklist",

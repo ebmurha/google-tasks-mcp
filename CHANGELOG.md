@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.3.0] - 2026-05-09
 
 ### Added
 - OAuth 2.0 authorization-server gateway (`mcp_oauth_gateway`) wraps the HTTP app, enabling Claude.ai web and other OAuth clients to authenticate without a static bearer token. Legacy `MCP_BEARER_TOKEN` continues to work alongside OAuth-issued tokens.

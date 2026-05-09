@@ -7,12 +7,12 @@
     "url": "https://github.com/ebmurha/google-tasks-mcp",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.3.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "google-tasks-mcp",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "transport": {
         "type": "stdio"
       },
