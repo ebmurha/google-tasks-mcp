@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "mcp-oauth-gateway"
+version = "0.1.0"
+description = "Reusable OAuth 2.0 front door for remote MCP servers"
+requires-python = ">=3.11"
+dependencies = [
+    "starlette>=0.40",
+    "python-multipart>=0.0.9",   # required by starlette for form parsing
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx", "uvicorn[standard]"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mcp_oauth_gateway*"]
