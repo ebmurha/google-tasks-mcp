@@ -29,13 +29,32 @@ def test_update_access_token_does_not_clobber_refresh(configured_env):
 
 
 def test_tasklist_cache_round_trips(configured_env):
-    db.upsert_tasklist("list-1", "Inbox")
-    db.upsert_tasklist("list-2", "Work")
-    db.upsert_tasklist("list-1", "Inbox Updated")
+    db.replace_tasklist_cache([("list-2", "Work"), ("list-1", "Inbox")])
 
     cached = db.list_tasklists_cached()
 
     assert [(item.id, item.title) for item in cached] == [
-        ("list-1", "Inbox Updated"),
         ("list-2", "Work"),
+        ("list-1", "Inbox"),
     ]
+
+
+def test_replace_tasklist_cache_removes_stale_rows(configured_env):
+    db.replace_tasklist_cache([("list-1", "Inbox"), ("list-2", "Work")])
+    db.replace_tasklist_cache([("list-2", "Work Renamed")])
+
+    cached = db.list_tasklists_cached()
+
+    assert [(item.id, item.title) for item in cached] == [("list-2", "Work Renamed")]
+
+
+def test_delete_and_clear_tasklist_cache(configured_env):
+    db.replace_tasklist_cache([("list-1", "Inbox"), ("list-2", "Work")])
+
+    db.delete_tasklist_cached("list-1")
+
+    assert [(item.id, item.title) for item in db.list_tasklists_cached()] == [("list-2", "Work")]
+
+    db.clear_tasklist_cache()
+
+    assert db.list_tasklists_cached() == []

@@ -25,7 +25,7 @@ def _execute(request: Any) -> Any:
 
 
 def clear_tasklist_cache() -> None:
-    resolver.invalidate()
+    resolver.clear_tasklist_cache()
 
 
 def date_to_rfc3339(value: str | date | datetime | None) -> str | None:
@@ -66,7 +66,7 @@ def create_tasklist(*, title: str) -> dict[str, Any]:
         raise InvalidInputError("Tasklist title is required")
     service = _service()
     created = _execute(service.tasklists().insert(body={"title": clean_title}))
-    resolver.invalidate()
+    resolver.clear_tasklist_cache()
     return created
 
 
@@ -83,7 +83,7 @@ def update_tasklist(tasklist_id: str, *, title: str) -> dict[str, Any]:
         raise InvalidInputError("New tasklist title is required")
     service = _service()
     updated = _execute(service.tasklists().patch(tasklist=tasklist_id, body={"title": clean_title}))
-    resolver.invalidate()
+    resolver.clear_tasklist_cache()
     return updated
 
 
@@ -92,7 +92,7 @@ def delete_tasklist(tasklist_id: str) -> None:
         raise InvalidInputError("Tasklist id is required")
     service = _service()
     _execute(service.tasklists().delete(tasklist=tasklist_id))
-    resolver.invalidate()
+    resolver.delete_tasklist_cached(tasklist_id)
 
 
 def resolve_task_by_title(

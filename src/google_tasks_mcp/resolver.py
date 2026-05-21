@@ -11,11 +11,13 @@ from typing import Any
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from . import db
 from .auth import get_credentials
 from .config import get_settings
-from .errors import AmbiguousTitleError, GoogleTasksApiError, NotFoundError
+from .errors import AmbiguousTitleError, ConfigError, GoogleTasksApiError, NotFoundError
 
 
+# SQLite tier is write-through; never authoritative; invalidate on every tasklist mutation.
 TASKLIST_CACHE_SECONDS = 300
 
 
@@ -67,6 +69,52 @@ def invalidate() -> None:
         _cache = None
 
 
+def clear_tasklist_cache() -> None:
+    """Drop both in-memory and SQLite tasklist cache tiers."""
+
+    global _cache
+    with _refresh_lock:
+        _cache = None
+        try:
+            db.clear_tasklist_cache()
+        except ConfigError:
+            pass
+
+
+def delete_tasklist_cached(tasklist_id: str) -> None:
+    """Drop a deleted tasklist from both cache tiers."""
+
+    global _cache
+    with _refresh_lock:
+        _cache = None
+        try:
+            db.delete_tasklist_cached(tasklist_id)
+        except ConfigError:
+            pass
+
+
+def _build_cache(entries: list[TasklistEntry], fetched_at: float) -> _Cache:
+    by_id: dict[str, TasklistEntry] = {}
+    by_title: dict[str, list[str]] = defaultdict(list)
+    for entry in entries:
+        by_id[entry.id] = entry
+        by_title[_normalize_title(entry.title)].append(entry.id)
+    return _Cache(fetched_at=fetched_at, by_id=by_id, by_title=dict(by_title))
+
+
+def _seed_from_sqlite(now: float) -> _Cache | None:
+    rows = db.list_tasklists_cached()
+    if not rows:
+        return None
+
+    oldest_updated_at = min(row.updated_at for row in rows)
+    if now - oldest_updated_at >= TASKLIST_CACHE_SECONDS:
+        return None
+
+    entries = [TasklistEntry(id=row.id, title=row.title) for row in rows]
+    return _build_cache(entries, fetched_at=float(oldest_updated_at))
+
+
 def _refresh(*, force: bool = False) -> _Cache:
     global _cache
 
@@ -79,9 +127,14 @@ def _refresh(*, force: bool = False) -> _Cache:
         if not force and _is_fresh(now):
             return _cache  # type: ignore[return-value]
 
+        if not force:
+            seeded = _seed_from_sqlite(now)
+            if seeded is not None:
+                _cache = seeded
+                return seeded
+
         service = _service()
-        by_id: dict[str, TasklistEntry] = {}
-        by_title: dict[str, list[str]] = defaultdict(list)
+        entries: list[TasklistEntry] = []
         page_token: str | None = None
 
         while True:
@@ -99,15 +152,15 @@ def _refresh(*, force: bool = False) -> _Cache:
                         title=str(item.get("title") or ""),
                         updated=item.get("updated"),
                     )
-                    by_id[entry.id] = entry
-                    by_title[_normalize_title(entry.title)].append(entry.id)
+                    entries.append(entry)
                 page_token = result.get("nextPageToken")
             else:
                 page_token = None
             if not page_token:
                 break
 
-        _cache = _Cache(fetched_at=now, by_id=by_id, by_title=dict(by_title))
+        _cache = _build_cache(entries, fetched_at=now)
+        db.replace_tasklist_cache((entry.id, entry.title) for entry in _cache.by_id.values())
         return _cache
 
 

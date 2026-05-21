@@ -180,9 +180,11 @@ def test_resolve_task_by_title_ambiguous(monkeypatch, configured_env):
 
 def test_tasklist_crud_wrappers_call_google_methods_and_invalidate(monkeypatch, configured_env):
     service = _TasklistService()
-    invalidations = []
+    full_invalidations = []
+    deleted_invalidations = []
     monkeypatch.setattr(tasks, "_service", lambda: service)
-    monkeypatch.setattr(tasks.resolver, "invalidate", lambda: invalidations.append(True))
+    monkeypatch.setattr(tasks.resolver, "clear_tasklist_cache", lambda: full_invalidations.append(True))
+    monkeypatch.setattr(tasks.resolver, "delete_tasklist_cached", lambda tasklist_id: deleted_invalidations.append(tasklist_id))
 
     assert tasks.create_tasklist(title=" Inbox ") == {"id": "list-1", "title": "Inbox"}
     assert tasks.get_tasklist("list-1") == {"id": "list-1", "title": "Inbox"}
@@ -195,7 +197,8 @@ def test_tasklist_crud_wrappers_call_google_methods_and_invalidate(monkeypatch, 
         ("patch", {"tasklist": "list-1", "body": {"title": "Work"}}),
         ("delete", {"tasklist": "list-1"}),
     ]
-    assert len(invalidations) == 3
+    assert len(full_invalidations) == 2
+    assert deleted_invalidations == ["list-1"]
 
 
 def test_tasklist_crud_wrappers_reject_blank_input():
