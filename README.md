@@ -2,184 +2,259 @@
 
 <!-- mcp-name: io.github.ebmurha/google-tasks-mcp -->
 
-A self-hosted MCP server that connects any MCP-compatible client to Google Tasks. Tools return only what the model needs — compact task objects, no Google API envelope fields.
+Connect an MCP-compatible client to Google Tasks through a private server you run yourself. The server exposes compact tools for reading, searching, summarizing, creating, completing, updating, deleting, and moving Google Tasks.
 
-## Quickstart
+This project is for self-hosted use. You provide your own Google Cloud OAuth credentials, connect your own Google account, and keep tokens in your own SQLite database.
+
+## What You Get
+
+- 19 MCP tools for Google Tasks.
+- Local stdio mode for desktop/client-launched setups.
+- Streamable HTTP mode for local HTTP or VPS hosting.
+- Bearer-token HTTP auth, plus optional OAuth 2.0 gateway mode for MCP clients that support OAuth.
+- Compact responses designed for low-context assistant workflows.
+- Optional operator-managed multi-account bearer-token routing, for familiar setups such as one personal account and one work account.
+
+## Choose A Transport
+
+| Use case | Transport | Auth |
+| --- | --- | --- |
+| MCP client starts the process directly | `stdio` | No `MCP_BEARER_TOKEN` needed |
+| Local HTTP server | Streamable HTTP at `http://127.0.0.1:8787/mcp` | Bearer token |
+| VPS or other host | Streamable HTTP at `https://your-domain.example/mcp` | Bearer token or OAuth gateway |
+
+For deeper hosting and distribution guidance, see [MCP_SERVER_GUIDE.md](./MCP_SERVER_GUIDE.md) and [DISTRIBUTION.md](./DISTRIBUTION.md).
+
+## Install
 
 ```bash
 git clone https://github.com/ebmurha/google-tasks-mcp.git
 cd google-tasks-mcp
-python3.11 -m venv .venv && . .venv/bin/activate
+python3.11 -m venv .venv
+. .venv/bin/activate
 pip install -e .
-cp .env.example .env   # set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, MCP_BEARER_TOKEN
+cp .env.example .env
 ```
 
-Generate `MCP_BEARER_TOKEN` with `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
-Use it on HTTP MCP requests as `Authorization: Bearer <token>`.
-
-Bootstrap OAuth (once):
+Generate a bearer token if you will run HTTP mode:
 
 ```bash
-google-tasks-mcp-bootstrap
-# Open the printed URL, approve, paste back the code.
+python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-For multiple Google accounts on one HTTP server, create a stored bearer token per account and bootstrap that account:
+Put the generated value in `.env` as `MCP_BEARER_TOKEN`. Do not commit `.env`.
 
-```bash
-google-tasks-mcp-create-bearer-token --account-id personal --label "Personal account"
-google-tasks-mcp-bootstrap --account-id personal   # log into your personal Google account
+## Google Cloud Setup
 
-google-tasks-mcp-create-bearer-token --account-id work --label "Work account"
-google-tasks-mcp-bootstrap --account-id work       # log into your work Google account
-```
+1. Create or open a Google Cloud project.
+2. Enable the Google Tasks API.
+3. Configure the OAuth consent screen.
+4. Create an OAuth 2.0 Client ID.
 
-Use each printed bearer token in the matching account's MCP client. The server stores only token hashes.
+Recommended for local HTTP, VPS, Docker, and other server-style installs:
 
-`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` or `GOOGLE_OAUTH_KEYS_PATH` configure the Google Cloud OAuth app, not the Google user account. One OAuth client JSON can be reused for personal, work, and other Google accounts; each `google-tasks-mcp-bootstrap --account-id ...` run stores a separate Google refresh token for the account you log into in the browser.
+- Application type: **Web application**
+- Local redirect URI: `http://127.0.0.1:8787/callback`
+- Hosted redirect URI: `https://your-domain.example/callback`
+- `.env`: set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI`
 
-Start the server:
+Local-only alternative:
 
-```bash
-python -m google_tasks_mcp
-```
+- Application type: **Desktop app**
+- Download the OAuth client JSON outside this repo.
+- Set `GOOGLE_OAUTH_KEYS_PATH` to that file path.
+- Leave `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` empty unless you want env vars to override the JSON file.
 
-Health check: `curl http://127.0.0.1:8787/healthz` → `{"ok":true}`
-
-## Connect your MCP client
-
-**Remote HTTP** (server on a VPS or local machine):
-
-```
-URL:  http://127.0.0.1:8787/mcp
-Auth: Bearer <MCP_BEARER_TOKEN>
-```
-
-**Local stdio** (MCP client spawns the process directly):
-
-```
-command: /path/to/.venv/bin/python
-args:    ["-m", "google_tasks_mcp", "--transport", "stdio"]
-```
-
-`MCP_BEARER_TOKEN` is not required for stdio.
-
-## Authentication modes
-
-The HTTP server starts in one of two modes depending on environment variables:
-
-**Bearer-token mode** (default, when `MCP_OAUTH_ISSUER` is not set) — `/mcp` requires `Authorization: Bearer <token>`. `MCP_BEARER_TOKEN` is the legacy single-account token for account `default`; stored hashed bearer tokens created with `google-tasks-mcp-create-bearer-token` can route different clients to different Google accounts.
-
-**OAuth 2.0 gateway mode** (when `MCP_OAUTH_ISSUER` is set) — the server also serves `/.well-known/oauth-authorization-server`, `/authorize`, `/token`, and `/revoke`. `/mcp` accepts both OAuth-issued tokens and the legacy `MCP_BEARER_TOKEN`. Right for MCP web clients (e.g. Claude.ai) that perform a full OAuth flow. See `.env.example` for the required variables (`MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET`, `MCP_OAUTH_SIGNING_SECRET`). `MCP_OAUTH_REDIRECT_URIS` is optional — leave it unset to keep OAuth disabled even when `MCP_OAUTH_ISSUER` is present.
-
-OAuth gateway refresh tokens are persisted by hash in SQLite and rotate on use, so OAuth-capable MCP clients can reconnect after a server restart without forcing a new authorization flow.
-
-## Tools
-
-The same 19 tools are available over local stdio, bearer-token HTTP, and OAuth 2.0 gateway HTTP modes. MCP tool metadata includes concise titles, descriptions, and standard read-only/destructive/idempotent/open-world hints where supported by the client.
-
-| Group | Tools |
-|-------|-------|
-| Tasklists | `list_tasklists`, `create_tasklist`, `get_tasklist`, `update_tasklist`, `delete_tasklist` |
-| Task reads | `list_tasks`, `get_task` |
-| Task summaries | `today`, `overdue`, `upcoming`, `search`, `digest` |
-| Task mutations | `clear_completed`, `add`, `complete`, `update`, `uncomplete`, `delete`, `move` |
-
-| Tool | What it does |
-|------|--------------|
-| `list_tasklists` | List compact tasklist IDs and titles |
-| `create_tasklist` | Create a tasklist and return compact metadata with `human_summary` |
-| `get_tasklist` | Get one tasklist by ID or exact title |
-| `update_tasklist` | Rename a tasklist by ID only |
-| `delete_tasklist` | Delete a tasklist by ID after `confirm: true`; non-empty lists require `force: true` |
-| `list_tasks` | List tasks from one tasklist with filters and pagination; omitted `tasklist` uses the default list |
-| `get_task` | Get one task by ID or exact title, with notes, parent, position, and web link |
-| `today` | Incomplete tasks due today; all tasklists when `tasklist` is omitted |
-| `overdue` | Incomplete overdue tasks; all tasklists when `tasklist` is omitted |
-| `upcoming` | Incomplete tasks due within N days (default 7); all tasklists when `tasklist` is omitted |
-| `search` | Case-insensitive title + notes search; all tasklists when `tasklist` is omitted |
-| `digest` | Short text summary (~30-100 tokens); all tasklists when `tasklist` is omitted |
-| `clear_completed` | Hide completed tasks in one tasklist after `confirm: true` and report `cleared_count` |
-| `add` | Create a task or subtask, optionally after a sibling, and return a rich mutation response with `human_summary` |
-| `complete` | Mark one task done by ID or exact title and return title, due date, tasklist, and `human_summary` |
-| `update` | Edit one task by ID, or by exact title for non-title fields; `status` may be `needsAction` or `completed` |
-| `uncomplete` | Reopen one completed task by ID or exact title and return a rich mutation response |
-| `delete` | Delete one task by ID or exact title and return pre-deletion task details with `deleted: true` |
-| `move` | Move one task by ID or exact title, optionally changing tasklist, parent, or sibling order |
-
-All `tasklist` arguments accept both a list ID and a friendly title. Task title lookup is exact after trimming whitespace and ignores case; if more than one active task matches, the server returns a structured ambiguity error with candidate IDs.
-
-For read summaries, omitting `tasklist` means "read every tasklist": `today`, `overdue`, `upcoming`, `search`, and `digest` aggregate across all lists. Task results include `tasklist_id` / `tasklist_title`, and `digest` labels items with the tasklist title. Passing a tasklist ID or title scopes those tools to that one list.
-
-For `list_tasks`, `clear_completed`, single-task tools, and write tools, omitting `tasklist` still uses `DEFAULT_TASKLIST` from `.env`, or the first list returned by Google for the authenticated account. This prevents unqualified writes from touching every list. Task list rename and delete tools require an ID to reduce accidental destructive changes. Cross-list task moves are emulated by creating the task in the destination list and deleting the original, so the moved task has a new Google task ID.
-
-### Limitations
-
-These are Google Tasks REST API limits, not MCP gaps — no workaround exists in this server:
-
-- **Due dates are date-only.** Any time-of-day component on `due` is silently dropped by Google.
-- **No recurrence.** The REST API has no `recurrence` field; recurring tasks created in the Google Tasks UI cannot be created or read through the API.
-- **`clear` hides, doesn't delete.** Cleared completed tasks are marked hidden — they survive in the account and reappear when listed with `show_hidden`.
-
-## Google Cloud setup
-
-1. Create a project → enable the **Google Tasks API** → configure the OAuth consent screen.
-2. Create an **OAuth 2.0 Client ID**.
-
-**Recommended: Web application**
-
-- Use this for normal local, VPS, Docker, and other server-style installs.
-- Add the exact callback URL to **Authorized redirect URIs**.
-- For local installs, use `http://127.0.0.1:8787/callback`.
-- For remote servers, use `https://your-domain.example/callback`.
-- Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in `.env`.
-- `GOOGLE_REDIRECT_URI` must exactly match one of the authorized redirect URIs.
-
-Example `.env` values for a local Web application OAuth client:
+Example `.env` for a local web OAuth client:
 
 ```env
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
 GOOGLE_REDIRECT_URI=http://127.0.0.1:8787/callback
+MCP_BEARER_TOKEN=generated-local-bearer-token
+DB_PATH=./google-tasks.db
+BIND_HOST=127.0.0.1
+BIND_PORT=8787
 ```
 
-**Local-only alternative: Desktop app**
+If the Google OAuth app is in Testing mode, add every Google account you bootstrap as a test user, such as both personal and work accounts.
 
-- Choose **Desktop app** as the OAuth client application type.
-- Use this only for a personal local install where the app runs on your own machine.
-- Download the client JSON, store it outside the repo, and point `GOOGLE_OAUTH_KEYS_PATH` to the file.
-- You may leave `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` empty when using the JSON file.
-- You may omit `GOOGLE_REDIRECT_URI` if the JSON contains `redirect_uris`; otherwise set it to one of the JSON file's redirect URIs.
+`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_OAUTH_KEYS_PATH` identify the Google Cloud OAuth app, not the Google Tasks user account. One OAuth client JSON can be reused for several Google users. Each bootstrap run stores a separate refresh token for the Google account you authorize in the browser.
 
-Example `.env` values for a Desktop app OAuth client:
+## Bootstrap Google OAuth
 
-```env
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=
-GOOGLE_OAUTH_KEYS_PATH=/home/you/.config/google-tasks-mcp/gcp-oauth.keys.json
+Run this once per Google account you want the server to access:
+
+```bash
+google-tasks-mcp-bootstrap
 ```
 
-The repo-root fallback name `gcp-oauth.keys.json` is supported for convenience, but keeping OAuth credential JSON outside the repo is preferred.
+Open the printed URL, approve access, and paste the authorization code back into the terminal.
 
-If the consent screen is in testing mode, add every Google account you bootstrap, such as both personal and work accounts, as test users or refresh tokens will expire after 7 days.
+For multiple trusted accounts on one HTTP server, create one stored bearer token per account and bootstrap each account separately:
 
-## Docker
+```bash
+google-tasks-mcp-create-bearer-token --account-id personal --label "Personal account"
+google-tasks-mcp-bootstrap --account-id personal
+
+google-tasks-mcp-create-bearer-token --account-id work --label "Work account"
+google-tasks-mcp-bootstrap --account-id work
+```
+
+Use each printed bearer token only in the matching account's MCP client. The server stores only bearer-token hashes.
+
+## Start The Server
+
+HTTP mode:
+
+```bash
+python -m google_tasks_mcp --transport http
+```
+
+Health check:
+
+```bash
+curl http://127.0.0.1:8787/healthz
+```
+
+Expected response:
+
+```json
+{"ok": true}
+```
+
+Stdio mode:
+
+```bash
+python -m google_tasks_mcp --transport stdio
+```
+
+Configuration check:
+
+```bash
+python -m google_tasks_mcp --check
+```
+
+## Connect An MCP Client
+
+Remote or local HTTP:
+
+```text
+URL:  http://127.0.0.1:8787/mcp
+Auth: Bearer <MCP_BEARER_TOKEN>
+```
+
+For a VPS, replace the URL with your HTTPS endpoint:
+
+```text
+URL:  https://your-domain.example/mcp
+Auth: Bearer <MCP_BEARER_TOKEN>
+```
+
+Local stdio:
+
+```json
+{
+  "command": "/path/to/google-tasks-mcp/.venv/bin/python",
+  "args": ["-m", "google_tasks_mcp", "--transport", "stdio"]
+}
+```
+
+`MCP_BEARER_TOKEN` is not required for stdio because the MCP client launches the process locally.
+
+## Authentication Modes
+
+Bearer-token mode is the default HTTP mode. `/mcp` requires `Authorization: Bearer <token>`.
+
+- `MCP_BEARER_TOKEN` routes to account `default`.
+- Tokens created with `google-tasks-mcp-create-bearer-token` can route different clients to different `account_id` values.
+- Bearer tokens are displayed once and stored only as hashes.
+
+OAuth 2.0 gateway mode is optional. Enable it when your HTTP MCP client supports OAuth authorization metadata and token refresh.
+
+- Set `MCP_OAUTH_ISSUER`, `MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET`, and `MCP_OAUTH_SIGNING_SECRET`.
+- Set `MCP_OAUTH_REDIRECT_URIS` to the callback URI values accepted by your MCP client.
+- `/mcp` accepts OAuth-issued access tokens and the legacy bearer token.
+- OAuth gateway refresh tokens are stored by hash and rotate on use, so clients can reconnect after server restart.
+
+Leave `MCP_OAUTH_REDIRECT_URIS` empty to keep OAuth gateway mode disabled.
+
+## Tools
+
+The same 19 tools are available over stdio, bearer-token HTTP, and OAuth gateway HTTP modes. Tools expose standard MCP titles, descriptions, and safety hints where the client supports them.
+
+| Group | Tools | Notes |
+| --- | --- | --- |
+| Tasklists | `list_tasklists`, `create_tasklist`, `get_tasklist`, `update_tasklist`, `delete_tasklist` | Tasklist delete requires `confirm: true`; non-empty lists require `force: true`. |
+| Task reads | `list_tasks`, `get_task` | Read from one tasklist. If `tasklist` is omitted, uses `DEFAULT_TASKLIST` or Google's first list. |
+| Task summaries | `today`, `overdue`, `upcoming`, `search`, `digest` | If `tasklist` is omitted, reads all tasklists and includes tasklist context. |
+| Task mutations | `clear_completed`, `add`, `complete`, `update`, `uncomplete`, `delete`, `move` | Mutate one tasklist/task at a time. `clear_completed` requires `confirm: true`. |
+
+All `tasklist` arguments accept a tasklist ID or exact title. Task title lookup is exact after trimming whitespace and ignores case.
+
+For `today`, `overdue`, `upcoming`, `search`, and `digest`, omitting `tasklist` reads every tasklist. Returned task objects include `tasklist_id` and `tasklist_title`; `digest` labels items with tasklist context.
+
+For `list_tasks`, `clear_completed`, single-task tools, and write tools, omitting `tasklist` uses `DEFAULT_TASKLIST`, or the first list returned by Google. This prevents unqualified writes from touching every list.
+
+## Limitations
+
+These are Google Tasks REST API limits:
+
+- Due dates are date-only. Google drops time-of-day values on task due dates.
+- Recurring tasks cannot be created or read through the Google Tasks REST API.
+- `clear_completed` hides completed tasks; it does not permanently delete them.
+
+## Docker And VPS
+
+Docker:
 
 ```bash
 docker compose up --build
 ```
 
-Keep `.env`, `gcp-oauth.keys.json`, and database files outside the image — mount a named volume for the database directory.
+Keep `.env`, OAuth JSON files, and SQLite databases outside images and public bundles.
 
-## VPS / systemd
+VPS/systemd/Caddy templates are in `deploy/`:
 
-Template files are in `deploy/`:
+- [deploy/caddy/Caddyfile](./deploy/caddy/Caddyfile)
+- [deploy/systemd/google-tasks-mcp.service](./deploy/systemd/google-tasks-mcp.service)
 
-- `deploy/caddy/Caddyfile` — Caddy reverse proxy with HTTPS
-- `deploy/systemd/google-tasks-mcp.service` — systemd unit
+Replace every placeholder domain, path, and user before deploying.
 
-Replace all placeholder domains, paths, and users before deploying.
+## Troubleshooting
+
+Missing bearer token:
+
+- HTTP `/mcp` requires `Authorization: Bearer <token>` unless OAuth gateway mode is handling the client.
+- Stdio mode does not use `MCP_BEARER_TOKEN`.
+
+Google OAuth app is in Testing mode:
+
+- Add every bootstrapped Google user as a test user.
+- Testing-mode refresh tokens can expire after 7 days.
+
+Callback URI mismatch:
+
+- `GOOGLE_REDIRECT_URI` must exactly match an Authorized redirect URI in Google Cloud.
+- For local web OAuth, use `http://127.0.0.1:8787/callback` consistently.
+
+Expired or revoked Google refresh token:
+
+- Run `google-tasks-mcp-bootstrap` again for the affected account.
+- For multi-account mode, include the same `--account-id` you used before.
+
+OAuth MCP client keeps re-authorizing:
+
+- Ensure the server is running a version with persisted MCP OAuth refresh tokens.
+- Check that `DB_PATH` points to persistent storage and survives restarts.
+- Verify `MCP_OAUTH_ISSUER` is the public HTTPS base URL with no trailing slash.
+
+## More Docs
+
+- [MCP_SERVER_GUIDE.md](./MCP_SERVER_GUIDE.md) explains hosting models, credential boundaries, and public project vs public service choices.
+- [DISTRIBUTION.md](./DISTRIBUTION.md) explains registry, bundle, and directory publishing.
+- [.env.example](./.env.example) lists every supported environment variable.
+- [google-tasks-mcp-specifications.md](./google-tasks-mcp-specifications.md) is the behavioral source of truth.
 
 ## Tests
 

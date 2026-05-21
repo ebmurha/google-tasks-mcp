@@ -201,17 +201,17 @@ Add future implementation steps here when the next release scope is known. Keep 
 
 ### Step 18 — Rewrite README for fast user comprehension
 
-- **Status:** Not started
+- **Status:** Complete
 - **Enhancement source:** `docs/planning/enhancements.md` bullet asking for a clearer, more user-friendly README using `docs/samples/slack-mcp-readme.md` as a clarity reference only.
 - **Objective:** Turn the README into a short, readable setup and usage guide that explains what the server does, who it is for, and how to connect it without burying users in implementation details.
 - **Tasks / Actions:**
-  - [ ] Audit the current README, `MCP_SERVER_GUIDE.md`, `DISTRIBUTION.md`, `.env.example`, and the Slack sample. Use the Slack sample as a clarity benchmark, not as content to copy.
-  - [ ] Restructure README around the user journey: what this is, supported transports, quickstart, Google Cloud setup, OAuth bootstrap, connect an MCP client, tools by group, authentication modes, limitations, deployment pointers, and troubleshooting links.
-  - [ ] Move deep architecture/distribution material out of README into `MCP_SERVER_GUIDE.md`, `DISTRIBUTION.md`, or focused docs. README should link to those docs instead of duplicating them.
-  - [ ] Keep all examples self-hostable and placeholder-only. No private domains, bearer tokens, OAuth client secrets, refresh tokens, database paths containing maintainer identity, or shared hosted endpoint language.
-  - [ ] Update the tool table to reflect Steps 16-17 if they have landed: grouped tools, all-list default read summaries, confirmation requirements, and compact response behavior.
-  - [ ] Add a short troubleshooting section for the common failures: missing bearer token, Google OAuth app still in Testing mode, callback URI mismatch, expired/revoked Google refresh token, and OAuth gateway re-authorize loop if Step 15 is not yet shipped.
-  - [ ] Check package/registry metadata still finds the `mcp-name` marker and that docs referenced from `DISTRIBUTION.md` remain accurate.
+  - [x] Audit the current README, `MCP_SERVER_GUIDE.md`, `DISTRIBUTION.md`, `.env.example`, and the Slack sample. Use the Slack sample as a clarity benchmark, not as content to copy.
+  - [x] Restructure README around the user journey: what this is, supported transports, quickstart, Google Cloud setup, OAuth bootstrap, connect an MCP client, tools by group, authentication modes, limitations, deployment pointers, and troubleshooting links.
+  - [x] Move deep architecture/distribution material out of README into `MCP_SERVER_GUIDE.md`, `DISTRIBUTION.md`, or focused docs. README should link to those docs instead of duplicating them.
+  - [x] Keep all examples self-hostable and placeholder-only. No private domains, bearer tokens, OAuth client secrets, refresh tokens, database paths containing maintainer identity, or shared hosted endpoint language.
+  - [x] Update the tool table to reflect Steps 16-17 if they have landed: grouped tools, all-list default read summaries, confirmation requirements, and compact response behavior.
+  - [x] Add a short troubleshooting section for the common failures: missing bearer token, Google OAuth app still in Testing mode, callback URI mismatch, expired/revoked Google refresh token, and OAuth gateway re-authorize loop if Step 15 is not yet shipped.
+  - [x] Check package/registry metadata still finds the `mcp-name` marker and that docs referenced from `DISTRIBUTION.md` remain accurate.
 - **Tests to run:**
   - `pytest tests/test_release_artifacts.py -x`
   - `pytest -x`
@@ -221,10 +221,10 @@ Add future implementation steps here when the next release scope is known. Keep 
   - Do not publish or imply a shared hosted endpoint connected to the maintainer's Google account.
   - Keep provider-specific MCP clients as examples, not assumptions.
 - **Acceptance criteria / verification checklist:**
-  - [ ] A first-time user can understand the server, install path, auth model, and connection options in one read.
-  - [ ] README is shorter and clearer, with deep details moved to linked docs.
-  - [ ] All commands and config snippets use placeholders and avoid secrets.
-  - [ ] README, guide, distribution docs, changelog, and release metadata agree on supported transports, auth modes, and tool count.
+  - [x] A first-time user can understand the server, install path, auth model, and connection options in one read.
+  - [x] README is shorter and clearer, with deep details moved to linked docs.
+  - [x] All commands and config snippets use placeholders and avoid secrets.
+  - [x] README, guide, distribution docs, changelog, and release metadata agree on supported transports, auth modes, and tool count.
 
 ### Release Step — Docs And Release Prep
 
