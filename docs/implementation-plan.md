@@ -148,30 +148,30 @@ Add future implementation steps here when the next release scope is known. Keep 
 
 ### Step 16 — Default read views to all tasklists
 
-- **Status:** Not started
+- **Status:** Complete
 - **Enhancement source:** `docs/planning/enhancements.md` bullet: `docs/open-issues/mcp-bug-default-tasklist.md - go for option A.`
 - **Objective:** Fix silent false-empty reads by making `today`, `overdue`, `upcoming`, `search`, and `digest` query all tasklists when `tasklist` is omitted. Explicit `tasklist` values must continue to scope to one list.
 - **Tasks / Actions:**
-  - [ ] Update the spec before implementation: omitted `tasklist` for the five read-summary tools means all tasklists; write tools and single-task operations keep their current default-tasklist behavior unless the spec explicitly changes them.
-  - [ ] Add a shared read-scope helper in `server.py` or a small dedicated module: `tasklist=None` returns all tasklist IDs/titles from `tasks_api.list_tasklists()`, while a non-empty tasklist title/ID resolves to exactly one list. Consider accepting `tasklist="all"` only if the spec documents it.
-  - [ ] Update `today_tool`, `overdue_tool`, `upcoming_tool`, `search_tool`, and `digest_tool` to aggregate across the read scope. Keep Google as source of truth; do not cache task contents or filtered views.
-  - [ ] Preserve enough tasklist context in aggregated responses to disambiguate results from different lists. At minimum, aggregated task objects should include `tasklist_id` and `tasklist_title`; update compact response helpers only as the spec allows.
-  - [ ] Define deterministic ordering for aggregated results: due date first when present, then tasklist title, then Google `position`/title as appropriate. Apply `search.limit` after merging all matches so one list cannot starve later lists.
-  - [ ] Ensure partial failures return compact structured errors. If one tasklist fails, either fail the whole tool with a clear `tasklist_id`/`tasklist_title` hint or implement a documented partial-failure shape; choose in the spec before coding.
-  - [ ] Update README and open issue notes so users understand that unqualified read summaries mean "all lists."
+  - [x] Update the spec before implementation: omitted `tasklist` for the five read-summary tools means all tasklists; write tools and single-task operations keep their current default-tasklist behavior unless the spec explicitly changes them.
+  - [x] Add a shared read-scope helper in `server.py` or a small dedicated module: `tasklist=None` returns all tasklist IDs/titles from `tasks_api.list_tasklists()`, while a non-empty tasklist title/ID resolves to exactly one list. Consider accepting `tasklist="all"` only if the spec documents it.
+  - [x] Update `today_tool`, `overdue_tool`, `upcoming_tool`, `search_tool`, and `digest_tool` to aggregate across the read scope. Keep Google as source of truth; do not cache task contents or filtered views.
+  - [x] Preserve enough tasklist context in aggregated responses to disambiguate results from different lists. At minimum, aggregated task objects should include `tasklist_id` and `tasklist_title`; update compact response helpers only as the spec allows.
+  - [x] Define deterministic ordering for aggregated results: due date first when present, then tasklist title, then Google `position`/title as appropriate. Apply `search.limit` after merging all matches so one list cannot starve later lists.
+  - [x] Ensure partial failures return compact structured errors. If one tasklist fails, either fail the whole tool with a clear `tasklist_id`/`tasklist_title` hint or implement a documented partial-failure shape; choose in the spec before coding.
+  - [x] Update README and open issue notes so users understand that unqualified read summaries mean "all lists."
 - **Tests to run:**
-  - `pytest tests/test_server.py tests/test_tasks_wrapper.py tests/test_resolver.py -x`
+  - `pytest tests/test_tools.py tests/test_tasks_wrapper.py tests/test_resolver.py -x`
   - `pytest -x`
 - **Constraints / rules (step-specific):**
   - Do not change the 19 MCP tool names.
   - Do not change write-tool defaults by accident; `add`, `complete`, `update`, `uncomplete`, `delete`, `move`, `clear_completed`, and `list_tasks` need explicit spec approval before their default scope changes.
   - Do not return raw Google envelopes or raw task metadata.
 - **Acceptance criteria / verification checklist:**
-  - [ ] `overdue()` with no `tasklist` returns overdue tasks from every tasklist, including tasks outside the configured/default list.
-  - [ ] `today()`, `upcoming()`, `search()`, and `digest()` show the same all-list behavior when `tasklist` is omitted.
-  - [ ] Passing an explicit tasklist ID or title scopes the result to that one list.
-  - [ ] Aggregated results include tasklist context and remain compact enough for low-context use.
-  - [ ] `docs/open-issues/mcp-bug-default-tasklist.md` is marked resolved or updated with implementation evidence.
+  - [x] `overdue()` with no `tasklist` returns overdue tasks from every tasklist, including tasks outside the configured/default list.
+  - [x] `today()`, `upcoming()`, `search()`, and `digest()` show the same all-list behavior when `tasklist` is omitted.
+  - [x] Passing an explicit tasklist ID or title scopes the result to that one list.
+  - [x] Aggregated results include tasklist context and remain compact enough for low-context use.
+  - [x] `docs/open-issues/mcp-bug-default-tasklist.md` is marked resolved or updated with implementation evidence.
 
 ### Step 17 — Improve MCP tool discoverability and grouping metadata
 

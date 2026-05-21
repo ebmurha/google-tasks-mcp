@@ -28,6 +28,24 @@ The server exposes exactly these 19 tools:
 
 Tool inputs and response shapes remain compact and provider-neutral. MCP responses must not expose raw Google API envelopes such as `kind`, `etag`, `selfLink`, pagination envelopes, or stack traces.
 
+## Tasklist Scope Defaults
+
+Tasklist-scoped inputs accept either a Google tasklist ID or an exact tasklist title.
+
+When `tasklist` is omitted for read-summary tools, the server reads all tasklists for the authenticated account and aggregates the compact result:
+
+- `today`
+- `overdue`
+- `upcoming`
+- `search`
+- `digest`
+
+Aggregated task objects include `tasklist_id` and `tasklist_title` so callers can disambiguate tasks from different lists. Aggregated `digest` text labels tasks with their tasklist title. Aggregated results are ordered deterministically by due date when present, then tasklist title, then Google position/title. `search.limit` is applied after matches from all tasklists are merged.
+
+When `tasklist` is provided for those read-summary tools, the result is scoped to exactly that one tasklist. The literal value `all` has no special meaning unless it is also the title or ID of a real tasklist.
+
+All write tools, single-task tools, `list_tasks`, and `clear_completed` keep the default-tasklist behavior: when `tasklist` is omitted, they use `DEFAULT_TASKLIST`, or the first tasklist returned by Google for the authenticated account. This avoids accidental writes across every list.
+
 ## Account Model
 
 The server supports two HTTP bearer-token account modes:

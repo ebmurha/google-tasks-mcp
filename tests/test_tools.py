@@ -13,6 +13,7 @@ def fake_task_store(monkeypatch, configured_env):
     tasklists = {
         "default": {"id": "default", "title": "Default", "updated": "2026-05-04T10:00:00.000Z"},
         "target": {"id": "target", "title": "Target", "updated": "2026-05-04T11:00:00.000Z"},
+        "other": {"id": "other", "title": "Other", "updated": "2026-05-04T12:00:00.000Z"},
     }
     store = {
         "default": [
@@ -60,6 +61,36 @@ def fake_task_store(monkeypatch, configured_env):
             },
         ],
         "target": [],
+        "other": [
+            {
+                "id": "other-today-1",
+                "title": "Other due today",
+                "due": "2026-05-05T00:00:00.000Z",
+                "status": "needsAction",
+                "position": "0001",
+                "updated": "2026-05-04T10:00:00.000Z",
+                "links": [],
+            },
+            {
+                "id": "other-old-1",
+                "title": "Other old task",
+                "notes": "Contains Alpha in another list",
+                "due": "2026-05-03T00:00:00.000Z",
+                "status": "needsAction",
+                "position": "0002",
+                "updated": "2026-05-04T11:00:00.000Z",
+                "links": [],
+            },
+            {
+                "id": "other-upcoming-1",
+                "title": "Other upcoming",
+                "due": "2026-05-07T00:00:00.000Z",
+                "status": "needsAction",
+                "position": "0003",
+                "updated": "2026-05-04T12:00:00.000Z",
+                "links": [],
+            },
+        ],
     }
     deleted_prefetches = []
     invalidations = []
@@ -260,14 +291,18 @@ def test_list_tasklists_is_compact(fake_task_store):
     result = server.list_tasklists_tool()
 
     assert result == {
-        "tasklists": [{"id": "default", "title": "Default"}, {"id": "target", "title": "Target"}]
+        "tasklists": [
+            {"id": "default", "title": "Default"},
+            {"id": "target", "title": "Target"},
+            {"id": "other", "title": "Other"},
+        ]
     }
 
 
 def test_tasklist_crud_round_trip_and_strips_google_fields(fake_task_store):
     created = server.create_tasklist_tool("Projects")
     assert created == {
-        "id": "list-3",
+        "id": "list-4",
         "title": "Projects",
         "updated": "2026-05-05T14:00:00.000Z",
         "human_summary": "Created tasklist 'Projects'",
@@ -278,20 +313,20 @@ def test_tasklist_crud_round_trip_and_strips_google_fields(fake_task_store):
 
     fetched = server.get_tasklist_tool(title="projects")
     assert fetched == {
-        "id": "list-3",
+        "id": "list-4",
         "title": "Projects",
         "updated": "2026-05-05T14:00:00.000Z",
     }
 
-    updated = server.update_tasklist_tool(id="list-3", new_title="Projects Renamed")
+    updated = server.update_tasklist_tool(id="list-4", new_title="Projects Renamed")
     assert updated["title"] == "Projects Renamed"
     assert updated["human_summary"] == "Renamed tasklist to 'Projects Renamed'"
 
-    deleted = server.delete_tasklist_tool(id="list-3", confirm=True)
-    assert deleted["id"] == "list-3"
+    deleted = server.delete_tasklist_tool(id="list-4", confirm=True)
+    assert deleted["id"] == "list-4"
     assert deleted["tasks_deleted_count"] == 0
     assert deleted["human_summary"] == "Deleted tasklist 'Projects Renamed'"
-    assert "list-3" not in fake_task_store[2]
+    assert "list-4" not in fake_task_store[2]
 
 
 def test_tasklist_mutations_invalidate_resolver_cache(fake_task_store):
@@ -496,32 +531,75 @@ def test_clear_completed_empty_list_returns_zero(fake_task_store):
 def test_today_filters_and_strips_google_fields(fake_task_store):
     result = server.today_tool()
 
+    assert result["count"] == 2
+    assert [task["id"] for task in result["tasks"]] == ["today-1", "other-today-1"]
+    assert result["tasks"][0] == {
+        "id": "today-1",
+        "title": "Due today",
+        "due": "2026-05-05",
+        "status": "needsAction",
+        "tasklist_id": "default",
+        "tasklist_title": "Default",
+    }
+    assert "kind" not in result["tasks"][0]
+
+
+def test_summary_tools_scope_to_explicit_tasklist(fake_task_store):
+    result = server.today_tool(tasklist="Other")
+
     assert result == {
         "count": 1,
         "tasks": [
             {
-                "id": "today-1",
-                "title": "Due today",
+                "id": "other-today-1",
+                "title": "Other due today",
                 "due": "2026-05-05",
                 "status": "needsAction",
+                "tasklist_id": "other",
+                "tasklist_title": "Other",
             }
         ],
     }
-    assert "kind" not in result["tasks"][0]
 
 
 def test_overdue_only_incomplete(fake_task_store):
     result = server.overdue_tool()
 
-    assert result["count"] == 1
-    assert result["tasks"][0]["id"] == "old-1"
+    assert result["count"] == 2
+    assert [task["id"] for task in result["tasks"]] == ["other-old-1", "old-1"]
+    assert {task["tasklist_title"] for task in result["tasks"]} == {"Default", "Other"}
+
+
+def test_upcoming_reads_all_tasklists(fake_task_store):
+    result = server.upcoming_tool(days=3)
+
+    assert result["count"] == 3
+    assert [task["id"] for task in result["tasks"]] == [
+        "today-1",
+        "other-today-1",
+        "other-upcoming-1",
+    ]
 
 
 def test_search_is_case_insensitive_and_excludes_completed_by_default(fake_task_store):
     result = server.search_tool("alpha")
 
-    assert result["count"] == 1
-    assert result["tasks"][0]["id"] == "old-1"
+    assert result["count"] == 2
+    assert [task["id"] for task in result["tasks"]] == ["other-old-1", "old-1"]
+
+
+def test_search_applies_limit_after_merging_all_tasklists(fake_task_store):
+    result = server.search_tool("task", limit=2)
+
+    assert result["count"] == 2
+    assert [task["id"] for task in result["tasks"]] == ["other-old-1", "old-1"]
+
+
+def test_digest_reads_all_tasklists(fake_task_store):
+    result = server.digest_tool()
+
+    assert "Other old task [Other]" in result["text"]
+    assert "Other upcoming [Other]" in result["text"]
 
 
 def test_get_task_by_title_is_case_insensitive_and_exact(fake_task_store):

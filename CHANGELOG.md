@@ -11,9 +11,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - OAuth gateway `/mcp` probe requests without bearer auth now return 401 with OAuth discovery metadata instead of reaching MCP tool handling.
+- `today`, `overdue`, `upcoming`, `search`, and `digest` now read all tasklists when `tasklist` is omitted, preventing false-empty summaries from the default list only.
 
 ### Compatibility
-- This is additive for existing single-account installs using `MCP_BEARER_TOKEN`.
+- Existing write-tool and `list_tasks` defaults are unchanged; omitted `tasklist` still resolves to `DEFAULT_TASKLIST` or Google's first list for those tools.
 
 ## [0.3.0] - 2026-05-09
 
