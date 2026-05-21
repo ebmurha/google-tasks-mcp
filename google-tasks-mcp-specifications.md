@@ -48,6 +48,7 @@ SQLite may persist:
 - Google OAuth tokens scoped by `account_id`.
 - Tasklist `id` / `title` cache rows scoped by `account_id`.
 - Hashed MCP bearer tokens mapped to `account_id`.
+- Hashed MCP OAuth refresh tokens issued by the HTTP OAuth gateway.
 - Legacy single-account compatibility rows used for upgrade/fallback.
 
 SQLite must not persist task content: task titles, notes, due dates, statuses, completion timestamps, parent/sibling links, web links, or derived filtered views.
@@ -57,6 +58,12 @@ SQLite must not persist task content: task titles, notes, due dates, statuses, c
 Stored bearer tokens are generated for operators and displayed once. The database stores only a stable hash, account id, optional label, enabled/revoked state, and timestamps.
 
 Logs, tests, docs, and MCP responses must not print raw bearer tokens except for the one-time operator command that creates a new token.
+
+## MCP OAuth Gateway Rules
+
+When OAuth gateway mode is enabled, unauthenticated `/mcp` requests must return 401 and include a `WWW-Authenticate` header that points clients at the OAuth authorization metadata endpoint. Unauthenticated probe requests must not reach MCP tool, resource, or prompt handling.
+
+MCP OAuth access tokens are signed and self-verifying. MCP OAuth refresh tokens are opaque, rotated on use, revocable, and persisted by hash so they survive server restarts without storing raw token values.
 
 ## Tasklist Cache Rules
 

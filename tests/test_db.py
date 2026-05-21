@@ -112,3 +112,27 @@ def test_bearer_token_lookup_uses_hash_and_enabled_flag(configured_env):
     revoked = db.get_bearer_token("secret-token")
     assert revoked is not None
     assert revoked.enabled is False
+
+
+def test_mcp_oauth_refresh_tokens_rotate_and_do_not_store_raw_values(configured_env):
+    db.save_mcp_oauth_refresh_token("refresh-token", "mcp-client", 9999999999)
+
+    record = db.consume_mcp_oauth_refresh_token("refresh-token")
+    replay = db.consume_mcp_oauth_refresh_token("refresh-token")
+
+    assert record == {"client_id": "mcp-client", "expires_at": 9999999999}
+    assert replay is None
+
+    with db._connect() as conn:
+        rows = conn.execute("SELECT token_hash FROM mcp_oauth_refresh_tokens").fetchall()
+    assert all(row["token_hash"] != "refresh-token" for row in rows)
+
+
+def test_mcp_oauth_refresh_token_backend(configured_env):
+    backend = db.McpOAuthRefreshTokenBackend()
+
+    backend.save("refresh-token", {"client_id": "mcp-client", "expires_at": 9999999999})
+    record = backend.consume("refresh-token")
+
+    assert record == {"client_id": "mcp-client", "expires_at": 9999999999}
+    assert backend.consume("refresh-token") is None

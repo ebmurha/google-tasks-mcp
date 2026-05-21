@@ -120,17 +120,17 @@ Add future implementation steps here when the next release scope is known. Keep 
 
 ### Step 15 — Fix MCP OAuth re-authorize loop and auth bypass
 
-- **Status:** Not started
+- **Status:** Complete
 - **Enhancement source:** `docs/planning/enhancements.md` bullet referencing `docs/open-issues/mcp-auth-reauthorize-loop.md`.
 - **Objective:** Make the OAuth 2.0 gateway secure and durable for remote HTTP MCP clients by enforcing auth on `/mcp`, returning the discovery 401 expected by MCP clients, and persisting MCP OAuth refresh tokens across restarts.
 - **Tasks / Actions:**
-  - [ ] Reproduce the unauthenticated `/mcp` behavior with an ASGI test before fixing it: a `POST /mcp` without `Authorization` must currently reach the MCP app in the failing case described by the issue.
-  - [ ] Fix the ASGI composition in `src/google_tasks_mcp/http_app.py` / `src/mcp_oauth_gateway/gateway.py` so every `/mcp` request passes through `MCPAuthMiddleware` in OAuth gateway mode. Investigate the current `Route("/mcp", endpoint=mcp_route.endpoint)` wrapping and replace it with the correct Starlette mounting/routing shape if needed.
-  - [ ] Update `MCPAuthMiddleware` unauthorized responses to return 401 with an MCP/OAuth discovery-friendly `WWW-Authenticate` header, using placeholder issuer values in docs and tests.
-  - [ ] Persist MCP OAuth refresh tokens used by `src/mcp_oauth_gateway/store.py`. Access tokens can remain signed self-verifying tokens; refresh tokens must survive process restarts, rotate on use, expire, and be revocable.
-  - [ ] Keep Google OAuth tokens separate from MCP OAuth tokens in naming, schema, docs, and errors. A Google token refresh failure must still surface as a compact tool error, not an MCP transport auth success/failure confusion.
-  - [ ] Add non-secret debug logging that can confirm middleware participation (`path`, auth status as present/missing, result code) without logging token values.
-  - [ ] Update `README.md`, `MCP_SERVER_GUIDE.md`, `.env.example`, and `docs/open-issues/mcp-auth-reauthorize-loop.md` status/outcome notes after the fix.
+  - [x] Reproduce the unauthenticated `/mcp` behavior with an ASGI test before fixing it: a `POST /mcp` without `Authorization` must currently reach the MCP app in the failing case described by the issue.
+  - [x] Fix the ASGI composition in `src/google_tasks_mcp/http_app.py` / `src/mcp_oauth_gateway/gateway.py` so every `/mcp` request passes through `MCPAuthMiddleware` in OAuth gateway mode. Investigate the current `Route("/mcp", endpoint=mcp_route.endpoint)` wrapping and replace it with the correct Starlette mounting/routing shape if needed.
+  - [x] Update `MCPAuthMiddleware` unauthorized responses to return 401 with an MCP/OAuth discovery-friendly `WWW-Authenticate` header, using placeholder issuer values in docs and tests.
+  - [x] Persist MCP OAuth refresh tokens used by `src/mcp_oauth_gateway/store.py`. Access tokens can remain signed self-verifying tokens; refresh tokens must survive process restarts, rotate on use, expire, and be revocable.
+  - [x] Keep Google OAuth tokens separate from MCP OAuth tokens in naming, schema, docs, and errors. A Google token refresh failure must still surface as a compact tool error, not an MCP transport auth success/failure confusion.
+  - [x] Add non-secret debug logging that can confirm middleware participation (`path`, auth status as present/missing, result code) without logging token values.
+  - [x] Update `README.md`, `MCP_SERVER_GUIDE.md`, `.env.example`, and `docs/open-issues/mcp-auth-reauthorize-loop.md` status/outcome notes after the fix.
 - **Tests to run:**
   - `pytest tests/test_http_app.py tests/test_oauth_gateway.py -x`
   - `pytest -x`
@@ -140,11 +140,11 @@ Add future implementation steps here when the next release scope is known. Keep 
   - Do not expose stack traces or token diagnostics to MCP clients.
   - Use generic placeholder domains in docs and tests; no maintainer-specific hostnames.
 - **Acceptance criteria / verification checklist:**
-  - [ ] Unauthenticated `/mcp` requests never list tools, resources, prompts, or invoke tools.
-  - [ ] The first unauthenticated MCP probe receives 401 with a useful `WWW-Authenticate` discovery header.
-  - [ ] OAuth-issued access tokens authorize `/mcp`; expired/invalid tokens do not.
-  - [ ] MCP OAuth refresh tokens remain valid after server restart until expiry or revocation, and rotation invalidates the old refresh token.
-  - [ ] The open issue documents the fix and no longer describes the current behavior as unresolved.
+  - [x] Unauthenticated `/mcp` requests never list tools, resources, prompts, or invoke tools.
+  - [x] The first unauthenticated MCP probe receives 401 with a useful `WWW-Authenticate` discovery header.
+  - [x] OAuth-issued access tokens authorize `/mcp`; expired/invalid tokens do not.
+  - [x] MCP OAuth refresh tokens remain valid after server restart until expiry or revocation, and rotation invalidates the old refresh token.
+  - [x] The open issue documents the fix and no longer describes the current behavior as unresolved.
 
 ### Step 16 — Default read views to all tasklists
 

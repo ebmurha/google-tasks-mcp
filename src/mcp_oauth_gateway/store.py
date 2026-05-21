@@ -11,7 +11,7 @@ import hashlib
 import hmac
 import json
 import base64
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Protocol
 
 
 def _b64(s: str) -> str:
@@ -41,9 +41,17 @@ def _verify(token: str, secret: str) -> Optional[dict]:
         return None
 
 
+class RefreshTokenBackend(Protocol):
+    def save(self, token: str, record: Dict[str, Any]) -> None: ...
+    def consume(self, token: str) -> Optional[Dict[str, Any]]: ...
+    def revoke(self, token: str) -> None: ...
+    def purge_expired(self) -> None: ...
+
+
 class TokenStore:
-    def __init__(self, signing_secret: str):
+    def __init__(self, signing_secret: str, refresh_backend: RefreshTokenBackend | None = None):
         self._secret = signing_secret
+        self._refresh_backend = refresh_backend
         # code -> {client_id, redirect_uri, code_challenge, expires_at}
         self._codes: Dict[str, Dict[str, Any]] = {}
         # refresh_token -> {client_id, issued_at, expires_at}
@@ -87,21 +95,30 @@ class TokenStore:
 
     def issue_refresh_token(self, client_id: str, ttl: int) -> str:
         token = secrets.token_urlsafe(48)
-        self._refresh[token] = {
+        record = {
             "client_id": client_id,
             "expires_at": time.time() + ttl,
         }
+        if self._refresh_backend is not None:
+            self._refresh_backend.save(token, record)
+        else:
+            self._refresh[token] = record
         return token
 
     def consume_refresh_token(self, token: str) -> Optional[Dict[str, Any]]:
         """Return and delete refresh record (rotation), or None if invalid."""
+        if self._refresh_backend is not None:
+            return self._refresh_backend.consume(token)
         rec = self._refresh.pop(token, None)
         if rec and rec["expires_at"] >= time.time():
             return rec
         return None
 
     def revoke_refresh_token(self, token: str):
-        self._refresh.pop(token, None)
+        if self._refresh_backend is not None:
+            self._refresh_backend.revoke(token)
+        else:
+            self._refresh.pop(token, None)
 
     # ---- DCR registered clients (optional) ---------------------------------
 
@@ -126,4 +143,7 @@ class TokenStore:
     def purge_expired(self):
         now = time.time()
         self._codes = {k: v for k, v in self._codes.items() if v["expires_at"] > now}
-        self._refresh = {k: v for k, v in self._refresh.items() if v["expires_at"] > now}
+        if self._refresh_backend is not None:
+            self._refresh_backend.purge_expired()
+        else:
+            self._refresh = {k: v for k, v in self._refresh.items() if v["expires_at"] > now}
