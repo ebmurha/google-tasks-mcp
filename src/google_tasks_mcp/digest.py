@@ -50,6 +50,9 @@ def shrink_task(t: dict[str, Any], *, include_notes: bool = False) -> dict[str, 
         ):
             if t.get(source) is not None:
                 compact[target] = t.get(source)
+    for field in ("tasklist_id", "tasklist_title"):
+        if t.get(field) is not None:
+            compact[field] = t.get(field)
     return compact
 
 

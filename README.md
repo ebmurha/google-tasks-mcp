@@ -87,12 +87,12 @@ The same 19 tools are available over local stdio, bearer-token HTTP, and OAuth 2
 | `delete_tasklist` | Delete a task list by ID after `confirm: true`; non-empty lists require `force: true` |
 | `list_tasks` | List tasks with date, completion, deleted, hidden, assigned, pagination, and timezone filters; auto-fetches up to 1000 tasks |
 | `clear_completed` | Hide completed tasks in a list after `confirm: true` and report `cleared_count` |
-| `today` | Incomplete tasks due today |
-| `overdue` | Incomplete overdue tasks |
-| `upcoming` | Tasks due within N days (default 7) |
-| `search` | Case-insensitive title + notes search |
+| `today` | Incomplete tasks due today; all tasklists when `tasklist` is omitted |
+| `overdue` | Incomplete overdue tasks; all tasklists when `tasklist` is omitted |
+| `upcoming` | Tasks due within N days (default 7); all tasklists when `tasklist` is omitted |
+| `search` | Case-insensitive title + notes search; all tasklists when `tasklist` is omitted |
 | `get_task` | Single task by ID or exact title, with notes, parent, position, and web link |
-| `digest` | Short text summary (~30–100 tokens) |
+| `digest` | Short text summary (~30–100 tokens); all tasklists when `tasklist` is omitted |
 | `add` | Create a task or subtask, optionally after a sibling, and return a rich mutation response with `human_summary` |
 | `complete` | Mark a task done by ID or exact title and return title, due date, tasklist, and `human_summary` |
 | `update` | Edit a task by ID, or by exact title for non-title fields; `status` may be `needsAction` or `completed` |
@@ -100,7 +100,11 @@ The same 19 tools are available over local stdio, bearer-token HTTP, and OAuth 2
 | `delete` | Delete a task by ID or exact title and return pre-deletion task details with `deleted: true` |
 | `move` | Move a task by ID or exact title, optionally changing tasklist, parent, or sibling order |
 
-All `tasklist` arguments accept both a list ID and a friendly title. Task title lookup is exact after trimming whitespace and ignores case; if more than one active task matches, the server returns a structured ambiguity error with candidate IDs. When `tasklist` is omitted, the server uses `DEFAULT_TASKLIST` from `.env`, or the first list returned by Google for the authenticated account. Task list rename and delete tools require an ID to reduce accidental destructive changes. Cross-list task moves are emulated by creating the task in the destination list and deleting the original, so the moved task has a new Google task ID.
+All `tasklist` arguments accept both a list ID and a friendly title. Task title lookup is exact after trimming whitespace and ignores case; if more than one active task matches, the server returns a structured ambiguity error with candidate IDs.
+
+For read summaries, omitting `tasklist` means "read every tasklist": `today`, `overdue`, `upcoming`, `search`, and `digest` aggregate across all lists. Task results include `tasklist_id` / `tasklist_title`, and `digest` labels items with the tasklist title. Passing a tasklist ID or title scopes those tools to that one list.
+
+For `list_tasks`, `clear_completed`, single-task tools, and write tools, omitting `tasklist` still uses `DEFAULT_TASKLIST` from `.env`, or the first list returned by Google for the authenticated account. This prevents unqualified writes from touching every list. Task list rename and delete tools require an ID to reduce accidental destructive changes. Cross-list task moves are emulated by creating the task in the destination list and deleting the original, so the moved task has a new Google task ID.
 
 ### Limitations
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date, datetime, time as datetime_time, timedelta, timezone as datetime_timezone
 from functools import wraps
 from typing import Any, TypeVar
@@ -14,12 +15,18 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from . import digest, timezones
-from .errors import AuthRequired, ConfigError, GoogleTasksApiError, GoogleTasksMcpError, InvalidInputError
+from .errors import AuthRequired, ConfigError, GoogleTasksApiError, GoogleTasksMcpError, InvalidInputError, NotFoundError
 from . import tasks as tasks_api
 
 
 LOGGER = logging.getLogger(__name__)
 F = TypeVar("F", bound=Callable[..., Any])
+
+
+@dataclass(frozen=True)
+class _ReadTasklist:
+    id: str
+    title: str
 
 
 def _error_payload(exc: Exception) -> dict[str, Any]:
@@ -36,7 +43,7 @@ def _error_payload(exc: Exception) -> dict[str, Any]:
     if isinstance(exc, ConfigError):
         return {"error": str(exc), "hint": "Check server configuration"}
     if isinstance(exc, GoogleTasksApiError):
-        return {"error": str(exc)}
+        return {"error": str(exc), **exc.details}
     if isinstance(exc, GoogleTasksMcpError):
         return {"error": str(exc)}
     LOGGER.exception("Unhandled tool error")
@@ -67,6 +74,22 @@ def _resolve(tasklist: str | None = None) -> str:
 
 def _tasklist_title(tasklist_id: str) -> str:
     return tasks_api.get_tasklist_title(tasklist_id)
+
+
+def _read_scope(tasklist: str | None = None) -> list[_ReadTasklist]:
+    requested = (tasklist or "").strip()
+    if requested:
+        tasklist_id = _resolve(requested)
+        return [_ReadTasklist(id=tasklist_id, title=_tasklist_title(tasklist_id))]
+
+    tasklists = [
+        _ReadTasklist(id=str(item.get("id")), title=str(item.get("title") or ""))
+        for item in tasks_api.list_tasklists()
+        if item.get("id")
+    ]
+    if not tasklists:
+        raise NotFoundError("No Google tasklists were found")
+    return tasklists
 
 
 def _resolve_task_id(
@@ -157,6 +180,109 @@ def list_tasklists_tool() -> dict[str, list[dict[str, str]]]:
     }
 
 
+def _sort_read_tasks(task_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        task_items,
+        key=lambda task: (
+            task.get("due") is None,
+            str(task.get("due") or ""),
+            str(task.get("tasklist_title") or "").casefold(),
+            str(task.get("position") or ""),
+            str(task.get("title") or "").casefold(),
+            str(task.get("id") or ""),
+        ),
+    )
+
+
+def _list_tasks_from_tasklist(
+    scope: _ReadTasklist,
+    *,
+    due_min: str | None = None,
+    due_max: str | None = None,
+    completed_min: str | None = None,
+    completed_max: str | None = None,
+    updated_min: str | None = None,
+    show_completed: bool = False,
+    show_deleted: bool = False,
+    show_hidden: bool = False,
+    show_assigned: bool = False,
+    max_results: int = 1000,
+    page_token: str | None = None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    bounded_max = max(1, min(max_results, 1000))
+    effective_show_completed = show_completed or show_hidden
+    items: list[dict[str, Any]] = []
+    next_page_token = page_token
+
+    while len(items) < bounded_max:
+        remaining = bounded_max - len(items)
+        response = tasks_api.list_tasks_page(
+            scope.id,
+            due_min=due_min,
+            due_max=due_max,
+            completed_min=completed_min,
+            completed_max=completed_max,
+            updated_min=updated_min,
+            show_completed=effective_show_completed,
+            show_deleted=show_deleted,
+            show_hidden=show_hidden,
+            show_assigned=show_assigned,
+            max_results=min(remaining, 100),
+            page_token=next_page_token,
+        )
+        page_items = response.get("items", []) or []
+        items.extend(page_items)
+        next_page_token = response.get("nextPageToken")
+        if not next_page_token or not page_items:
+            break
+
+    ordered_items = sorted(
+        items,
+        key=lambda task: str(task.get("position") or ""),
+    )
+    tasks = [
+        digest.full_task_object(task, scope.id, scope.title)
+        for task in ordered_items
+    ]
+    return tasks, next_page_token
+
+
+def _read_tasks(
+    tasklist: str | None = None,
+    *,
+    due_min: str | None = None,
+    due_max: str | None = None,
+    show_completed: bool = False,
+    max_results_per_list: int = 1000,
+) -> list[dict[str, Any]]:
+    task_items: list[dict[str, Any]] = []
+    for scope in _read_scope(tasklist):
+        try:
+            scoped_tasks, _next_page_token = _list_tasks_from_tasklist(
+                scope,
+                due_min=due_min,
+                due_max=due_max,
+                show_completed=show_completed,
+                max_results=max_results_per_list,
+            )
+        except GoogleTasksApiError as exc:
+            raise GoogleTasksApiError(
+                exc.message or "Google Tasks API request failed while reading tasklist",
+                tasklist_id=scope.id,
+                tasklist_title=scope.title,
+            ) from exc
+        except GoogleTasksMcpError:
+            raise
+        except Exception as exc:
+            raise GoogleTasksApiError(
+                "Google Tasks API request failed while reading tasklist",
+                tasklist_id=scope.id,
+                tasklist_title=scope.title,
+            ) from exc
+        task_items.extend(scoped_tasks)
+    return _sort_read_tasks(task_items)
+
+
 def list_tasks_tool(
     tasklist: str | None = None,
     due_min: str | None = None,
@@ -177,46 +303,25 @@ def list_tasks_tool(
     tz = timezones.resolve_timezone(timezone)
     tasklist_id = _resolve(tasklist)
     tasklist_title = _tasklist_title(tasklist_id)
-    bounded_max = max(1, min(max_results, 1000))
-    effective_show_completed = show_completed or show_hidden
     due_min_value = _rfc3339(due_min, tz)
     due_max_value = _rfc3339(due_max, tz)
     completed_min_value = _rfc3339(completed_min, tz)
     completed_max_value = _rfc3339(completed_max, tz)
     updated_min_value = _rfc3339(updated_min, tz)
-    items: list[dict[str, Any]] = []
-    next_page_token = page_token
-
-    while len(items) < bounded_max:
-        remaining = bounded_max - len(items)
-        response = tasks_api.list_tasks_page(
-            tasklist_id,
-            due_min=due_min_value,
-            due_max=due_max_value,
-            completed_min=completed_min_value,
-            completed_max=completed_max_value,
-            updated_min=updated_min_value,
-            show_completed=effective_show_completed,
-            show_deleted=show_deleted,
-            show_hidden=show_hidden,
-            show_assigned=show_assigned,
-            max_results=min(remaining, 100),
-            page_token=next_page_token,
-        )
-        page_items = response.get("items", []) or []
-        items.extend(page_items)
-        next_page_token = response.get("nextPageToken")
-        if not next_page_token or not page_items:
-            break
-
-    ordered_items = sorted(
-        items,
-        key=lambda task: str(task.get("position") or ""),
+    tasks, next_page_token = _list_tasks_from_tasklist(
+        _ReadTasklist(id=tasklist_id, title=tasklist_title),
+        due_min=due_min_value,
+        due_max=due_max_value,
+        completed_min=completed_min_value,
+        completed_max=completed_max_value,
+        updated_min=updated_min_value,
+        show_completed=show_completed,
+        show_deleted=show_deleted,
+        show_hidden=show_hidden,
+        show_assigned=show_assigned,
+        max_results=max_results,
+        page_token=page_token,
     )
-    tasks = [
-        digest.full_task_object(task, tasklist_id, tasklist_title)
-        for task in ordered_items
-    ]
     result: dict[str, Any] = {
         "tasks": tasks,
         "count": len(tasks),
@@ -329,24 +434,24 @@ def today_tool(tasklist: str | None = None) -> dict[str, Any]:
     tz = timezones.resolve_timezone()
     today = _today_in_timezone(tz)
     tomorrow = today + timedelta(days=1)
-    result = list_tasks_tool(
+    task_items = _read_tasks(
         tasklist=tasklist,
-        due_min=today.isoformat(),
-        due_max=tomorrow.isoformat(),
+        due_min=_rfc3339(today.isoformat(), tz),
+        due_max=_rfc3339(tomorrow.isoformat(), tz),
         show_completed=False,
     )
-    return digest.shrink_list(result["tasks"])
+    return digest.shrink_list(task_items)
 
 
 def overdue_tool(tasklist: str | None = None) -> dict[str, Any]:
     tz = timezones.resolve_timezone()
     today = _today_in_timezone(tz)
-    result = list_tasks_tool(
+    task_items = _read_tasks(
         tasklist=tasklist,
-        due_max=today.isoformat(),
+        due_max=_rfc3339(today.isoformat(), tz),
         show_completed=False,
     )
-    return digest.shrink_list(result["tasks"])
+    return digest.shrink_list(task_items)
 
 
 def upcoming_tool(days: int = 7, tasklist: str | None = None) -> dict[str, Any]:
@@ -354,13 +459,13 @@ def upcoming_tool(days: int = 7, tasklist: str | None = None) -> dict[str, Any]:
     tz = timezones.resolve_timezone()
     today = _today_in_timezone(tz)
     end_day = today + timedelta(days=bounded_days + 1)
-    result = list_tasks_tool(
+    task_items = _read_tasks(
         tasklist=tasklist,
-        due_min=today.isoformat(),
-        due_max=end_day.isoformat(),
+        due_min=_rfc3339(today.isoformat(), tz),
+        due_max=_rfc3339(end_day.isoformat(), tz),
         show_completed=False,
     )
-    return digest.shrink_list(result["tasks"])
+    return digest.shrink_list(task_items)
 
 
 def search_tool(
@@ -373,19 +478,17 @@ def search_tool(
     if not needle:
         return digest.shrink_list([])
     bounded_limit = max(1, min(limit, 100))
-    listed = list_tasks_tool(
+    listed_tasks = _read_tasks(
         tasklist=tasklist,
         show_completed=include_completed,
-        max_results=max(100, bounded_limit),
+        max_results_per_list=1000,
     )
     matches = []
-    for task in listed["tasks"]:
+    for task in listed_tasks:
         haystack = f"{task.get('title', '')}\n{task.get('notes', '')}".casefold()
         if needle in haystack and (include_completed or task.get("status") != "completed"):
             matches.append(task)
-        if len(matches) >= bounded_limit:
-            break
-    return digest.shrink_list(matches)
+    return digest.shrink_list(_sort_read_tasks(matches)[:bounded_limit])
 
 
 def get_task_tool(
@@ -403,7 +506,15 @@ def get_task_tool(
 
 
 def digest_tool(tasklist: str | None = None) -> dict[str, str]:
-    task_items = list_tasks_tool(tasklist=tasklist, max_results=100)["tasks"]
+    task_items = _read_tasks(tasklist=tasklist)[:100]
+    if not (tasklist or "").strip():
+        task_items = [
+            {
+                **task,
+                "title": f"{task.get('title', '')} [{task.get('tasklist_title', '')}]",
+            }
+            for task in task_items
+        ]
     return {"text": digest.text_digest(_incomplete(task_items))}
 
 

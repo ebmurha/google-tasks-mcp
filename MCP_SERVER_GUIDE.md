@@ -28,6 +28,8 @@ In this mode, a VPS is a normal place to host it. Your VPS is the remote machine
 
 This is not a service for arbitrary users unless you intentionally share the endpoint and bearer token. Anyone with the bearer token can read and modify the connected Google Tasks account.
 
+Within the selected Google account, unqualified read summaries mean all tasklists. `today`, `overdue`, `upcoming`, `search`, and `digest` aggregate across every list when `tasklist` is omitted; returned tasks and digest lines include tasklist context. Mutating tools still default to the configured/default tasklist when `tasklist` is omitted, so a casual `add` or `complete` call does not fan out across all lists.
+
 ## Public Project vs Public Service
 
 A public GitHub repository means anyone can inspect, install, and run their own copy.
