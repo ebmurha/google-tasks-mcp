@@ -7,7 +7,7 @@ import hashlib
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Any, Iterable, Iterator
 
 from .account import DEFAULT_ACCOUNT_ID, get_current_account_id
 from .config import get_settings
@@ -77,6 +77,14 @@ CREATE TABLE IF NOT EXISTS bearer_tokens (
     account_id TEXT NOT NULL,
     label TEXT,
     enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mcp_oauth_refresh_tokens (
+    token_hash TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
@@ -345,3 +353,82 @@ def revoke_bearer_token_hash(token_hash: str) -> None:
             """,
             (_now(), token_hash),
         )
+
+
+def _oauth_refresh_token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def save_mcp_oauth_refresh_token(token: str, client_id: str, expires_at: float) -> None:
+    init_db()
+    now = _now()
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO mcp_oauth_refresh_tokens (token_hash, client_id, expires_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(token_hash) DO UPDATE SET
+                client_id = excluded.client_id,
+                expires_at = excluded.expires_at,
+                updated_at = excluded.updated_at
+            """,
+            (_oauth_refresh_token_hash(token), client_id, int(expires_at), now, now),
+        )
+
+
+def consume_mcp_oauth_refresh_token(token: str) -> dict[str, int | str] | None:
+    init_db()
+    token_hash = _oauth_refresh_token_hash(token)
+    now = _now()
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT client_id, expires_at
+            FROM mcp_oauth_refresh_tokens
+            WHERE token_hash = ?
+            """,
+            (token_hash,),
+        ).fetchone()
+        conn.execute("DELETE FROM mcp_oauth_refresh_tokens WHERE token_hash = ?", (token_hash,))
+    if row is None or row["expires_at"] < now:
+        return None
+    return {"client_id": row["client_id"], "expires_at": row["expires_at"]}
+
+
+def revoke_mcp_oauth_refresh_token(token: str) -> None:
+    init_db()
+    with _connect() as conn:
+        conn.execute(
+            "DELETE FROM mcp_oauth_refresh_tokens WHERE token_hash = ?",
+            (_oauth_refresh_token_hash(token),),
+        )
+
+
+def purge_expired_mcp_oauth_refresh_tokens() -> None:
+    init_db()
+    with _connect() as conn:
+        conn.execute(
+            "DELETE FROM mcp_oauth_refresh_tokens WHERE expires_at < ?",
+            (_now(),),
+        )
+
+
+class McpOAuthRefreshTokenBackend:
+    """SQLite-backed MCP OAuth refresh-token store; raw tokens are never persisted."""
+
+    def save(self, token: str, record: dict[str, Any]) -> None:
+        save_mcp_oauth_refresh_token(
+            token,
+            client_id=str(record["client_id"]),
+            expires_at=float(record["expires_at"]),
+        )
+
+    def consume(self, token: str) -> dict[str, Any] | None:
+        record = consume_mcp_oauth_refresh_token(token)
+        return dict(record) if record is not None else None
+
+    def revoke(self, token: str) -> None:
+        revoke_mcp_oauth_refresh_token(token)
+
+    def purge_expired(self) -> None:
+        purge_expired_mcp_oauth_refresh_tokens()

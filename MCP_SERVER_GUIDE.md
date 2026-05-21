@@ -62,6 +62,8 @@ Use it when you want:
 
 The server remains private if you keep `MCP_BEARER_TOKEN` secret.
 
+When OAuth gateway mode is enabled for MCP clients that support OAuth, the gateway stores MCP OAuth refresh tokens by hash in SQLite. This is separate from Google OAuth refresh-token storage and lets OAuth-capable MCP clients refresh access after server restarts without re-authorizing.
+
 ### Local Machine
 
 A local process is good when the MCP client runs on the same computer and supports command-based MCP servers.

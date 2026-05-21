@@ -8,6 +8,8 @@ Middleware that:
 All other paths (/, /authorize, /token, etc.) pass through to the OAuth router.
 """
 
+import logging
+
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -16,14 +18,16 @@ from .store import TokenStore
 
 
 DEFAULT_ACCOUNT_ID = "default"
+LOGGER = logging.getLogger(__name__)
 
 
-def _unauthorized(msg: str) -> JSONResponse:
+def _unauthorized(msg: str, cfg: GatewayConfig) -> JSONResponse:
+    metadata_url = f"{cfg.issuer.rstrip('/')}/.well-known/oauth-authorization-server"
     return JSONResponse(
         {"error": "unauthorized", "error_description": msg},
         status_code=401,
         headers={
-            "WWW-Authenticate": 'Bearer error="invalid_token"',
+            "WWW-Authenticate": f'Bearer resource_metadata="{metadata_url}", error="invalid_token"',
             "Cache-Control": "no-store",
         },
     )
@@ -53,7 +57,8 @@ class MCPAuthMiddleware:
         headers = dict(scope.get("headers", []))
         auth = headers.get(b"authorization", b"").decode("utf-8", errors="replace")
         if not auth.lower().startswith("bearer "):
-            resp = _unauthorized("Missing Bearer token")
+            LOGGER.debug("mcp_auth_rejected", extra={"path": path, "reason": "missing_bearer"})
+            resp = _unauthorized("Missing Bearer token", self.cfg)
             await resp(scope, receive, send)
             return
 
@@ -71,11 +76,13 @@ class MCPAuthMiddleware:
         if account_id is None:
             payload = self.store.verify_access_token(token)
             if not payload:
-                resp = _unauthorized("Token invalid or expired")
+                LOGGER.debug("mcp_auth_rejected", extra={"path": path, "reason": "invalid_token"})
+                resp = _unauthorized("Token invalid or expired", self.cfg)
                 await resp(scope, receive, send)
                 return
             account_id = payload.get("account_id") or DEFAULT_ACCOUNT_ID
 
+        LOGGER.debug("mcp_auth_accepted", extra={"path": path, "account_id": account_id})
         context_token = None
         if self.cfg.set_account_context:
             context_token = self.cfg.set_account_context(account_id)

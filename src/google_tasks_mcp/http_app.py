@@ -127,6 +127,7 @@ def create_app() -> ASGIApp:
         bearer_token_resolver=resolve_bearer_token_account,
         set_account_context=set_current_account_id,
         reset_account_context=reset_current_account_id,
+        refresh_token_backend=db.McpOAuthRefreshTokenBackend(),
         allowed_redirect_uris=redirect_uris,
     )
 

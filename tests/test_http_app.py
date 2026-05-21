@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import parse_qs, urlparse
+
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -114,6 +116,90 @@ def test_oauth_gateway_accepts_legacy_bearer_token(configured_env, monkeypatch):
 
     assert response.status_code == 200
     assert '"protocolVersion":"2025-11-25"' in response.text
+
+
+def test_oauth_gateway_mcp_probe_requires_auth_and_advertises_metadata(configured_env, monkeypatch):
+    monkeypatch.setenv("MCP_OAUTH_ISSUER", "https://tasks.example.com")
+    monkeypatch.setenv("MCP_OAUTH_CLIENT_ID", "mcp-client")
+    monkeypatch.setenv("MCP_OAUTH_CLIENT_SECRET", "mcp-client-secret")
+    monkeypatch.setenv("MCP_OAUTH_SIGNING_SECRET", "x" * 64)
+    monkeypatch.setenv("MCP_OAUTH_REDIRECT_URIS", "https://client.example/callback")
+    reset_settings_cache()
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/mcp",
+            headers={"Accept": "application/json, text/event-stream"},
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+        )
+
+    assert response.status_code == 401
+    assert response.json()["error"] == "unauthorized"
+    assert "list_tasklists" not in response.text
+    assert response.headers["www-authenticate"] == (
+        'Bearer resource_metadata="https://tasks.example.com/.well-known/oauth-authorization-server", '
+        'error="invalid_token"'
+    )
+
+
+def test_oauth_refresh_token_survives_app_restart(configured_env, monkeypatch):
+    monkeypatch.setenv("MCP_OAUTH_ISSUER", "https://tasks.example.com")
+    monkeypatch.setenv("MCP_OAUTH_CLIENT_ID", "mcp-client")
+    monkeypatch.setenv("MCP_OAUTH_CLIENT_SECRET", "mcp-client-secret")
+    monkeypatch.setenv("MCP_OAUTH_SIGNING_SECRET", "x" * 64)
+    monkeypatch.setenv("MCP_OAUTH_REDIRECT_URIS", "https://client.example/callback")
+    reset_settings_cache()
+
+    with TestClient(create_app()) as client:
+        authorize = client.post(
+            "/authorize",
+            data={
+                "response_type": "code",
+                "client_id": "mcp-client",
+                "redirect_uri": "https://client.example/callback",
+                "state": "state-1",
+            },
+            follow_redirects=False,
+        )
+        assert authorize.status_code == 302
+        code = parse_qs(urlparse(authorize.headers["location"]).query)["code"][0]
+        token_response = client.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": "mcp-client",
+                "client_secret": "mcp-client-secret",
+                "code": code,
+                "redirect_uri": "https://client.example/callback",
+            },
+        )
+        assert token_response.status_code == 200
+        first_refresh = token_response.json()["refresh_token"]
+
+    with TestClient(create_app()) as restarted_client:
+        refresh_response = restarted_client.post(
+            "/token",
+            data={
+                "grant_type": "refresh_token",
+                "client_id": "mcp-client",
+                "client_secret": "mcp-client-secret",
+                "refresh_token": first_refresh,
+            },
+        )
+        replay_response = restarted_client.post(
+            "/token",
+            data={
+                "grant_type": "refresh_token",
+                "client_id": "mcp-client",
+                "client_secret": "mcp-client-secret",
+                "refresh_token": first_refresh,
+            },
+        )
+
+    assert refresh_response.status_code == 200
+    assert refresh_response.json()["refresh_token"] != first_refresh
+    assert replay_response.status_code == 400
+    assert replay_response.json()["error"] == "invalid_grant"
 
 
 def test_oauth_gateway_serves_discovery_and_support_routes(configured_env, monkeypatch):

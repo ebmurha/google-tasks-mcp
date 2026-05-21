@@ -72,6 +72,8 @@ The HTTP server starts in one of two modes depending on environment variables:
 
 **OAuth 2.0 gateway mode** (when `MCP_OAUTH_ISSUER` is set) — the server also serves `/.well-known/oauth-authorization-server`, `/authorize`, `/token`, and `/revoke`. `/mcp` accepts both OAuth-issued tokens and the legacy `MCP_BEARER_TOKEN`. Right for MCP web clients (e.g. Claude.ai) that perform a full OAuth flow. See `.env.example` for the required variables (`MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET`, `MCP_OAUTH_SIGNING_SECRET`). `MCP_OAUTH_REDIRECT_URIS` is optional — leave it unset to keep OAuth disabled even when `MCP_OAUTH_ISSUER` is present.
 
+OAuth gateway refresh tokens are persisted by hash in SQLite and rotate on use, so OAuth-capable MCP clients can reconnect after a server restart without forcing a new authorization flow.
+
 ## Tools
 
 The same 19 tools are available over local stdio, bearer-token HTTP, and OAuth 2.0 gateway HTTP modes.

@@ -33,6 +33,7 @@ def add_mcp_oauth_gateway(
     bearer_token_resolver=None,
     set_account_context=None,
     reset_account_context=None,
+    refresh_token_backend=None,
     mcp_path_prefix: str = "/mcp",
     enable_dcr: bool = False,
 ) -> ASGIApp:
@@ -81,7 +82,7 @@ def add_mcp_oauth_gateway(
     )
     cfg.validate()
 
-    store = TokenStore(cfg.signing_secret)
+    store = TokenStore(cfg.signing_secret, refresh_backend=refresh_token_backend)
     oauth_router = build_oauth_router(cfg, store)
 
     # Compose: OAuth routes first, then MCP app (protected by middleware)
