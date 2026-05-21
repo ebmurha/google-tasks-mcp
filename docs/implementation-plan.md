@@ -175,29 +175,29 @@ Add future implementation steps here when the next release scope is known. Keep 
 
 ### Step 17 — Improve MCP tool discoverability and grouping metadata
 
-- **Status:** Not started
+- **Status:** Complete
 - **Enhancement source:** `docs/planning/enhancements.md` bullet about tools being categorized as "Other tools" in LLM clients and needing grouping/discoverability without adding unnecessary tools.
 - **Objective:** Make the existing 19 tools easier for MCP clients and humans to browse without renaming tools or changing their input/output contracts.
 - **Tasks / Actions:**
-  - [ ] Research the currently installed MCP Python SDK / FastMCP support for tool metadata, annotations, titles, descriptions, and safety hints. Prefer official SDK/protocol behavior over client-specific hacks.
-  - [ ] Document the intended tool groups in the spec and README: Tasklists, Task reads, Task summaries, and Task mutations. This is documentation and metadata only; it must not add tools.
-  - [ ] Update `create_mcp_server()` registration so each tool has the best-supported metadata the SDK can expose, such as human-readable title/description and read-only/destructive/idempotent/open-world hints where available.
-  - [ ] Tighten function docstrings so `list_tools` output is concise, action-oriented, and clear about defaults, confirmation flags, destructive behavior, and whether the tool reads one list or all lists.
-  - [ ] If the MCP protocol/SDK has no first-class grouping field, do not invent a non-standard wire contract. Instead, use supported titles/descriptions consistently and document the limitation.
-  - [ ] Add tests that inspect the MCP `list_tools` response or FastMCP registered tool objects and assert names remain the exact 19-tool set while metadata is populated.
-  - [ ] Update README tool table to show the same grouping users will see conceptually in clients.
+  - [x] Research the currently installed MCP Python SDK / FastMCP support for tool metadata, annotations, titles, descriptions, and safety hints. Prefer official SDK/protocol behavior over client-specific hacks.
+  - [x] Document the intended tool groups in the spec and README: Tasklists, Task reads, Task summaries, and Task mutations. This is documentation and metadata only; it must not add tools.
+  - [x] Update `create_mcp_server()` registration so each tool has the best-supported metadata the SDK can expose, such as human-readable title/description and read-only/destructive/idempotent/open-world hints where available.
+  - [x] Tighten function docstrings so `list_tools` output is concise, action-oriented, and clear about defaults, confirmation flags, destructive behavior, and whether the tool reads one list or all lists.
+  - [x] If the MCP protocol/SDK has no first-class grouping field, do not invent a non-standard wire contract. Instead, use supported titles/descriptions consistently and document the limitation.
+  - [x] Add tests that inspect the MCP `list_tools` response or FastMCP registered tool objects and assert names remain the exact 19-tool set while metadata is populated.
+  - [x] Update README tool table to show the same grouping users will see conceptually in clients.
 - **Tests to run:**
-  - `pytest tests/test_server.py tests/test_release_artifacts.py -x`
+  - `pytest tests/test_tools.py tests/test_release_artifacts.py -x`
   - `pytest -x`
 - **Constraints / rules (step-specific):**
   - Preserve exact tool names and input schemas unless the spec is changed first.
   - Do not add wrapper/category tools.
   - Do not make provider-specific clients architectural requirements; client-specific notes may be examples only.
 - **Acceptance criteria / verification checklist:**
-  - [ ] `list_tools` still exposes exactly the 19 spec tool names.
-  - [ ] Every tool has a concise description and appropriate safety/read-only metadata where the SDK supports it.
-  - [ ] Destructive tools are clearly marked or described as destructive and retain confirmation requirements.
-  - [ ] README and spec present tools in stable groups without changing the MCP contract.
+  - [x] `list_tools` still exposes exactly the 19 spec tool names.
+  - [x] Every tool has a concise description and appropriate safety/read-only metadata where the SDK supports it.
+  - [x] Destructive tools are clearly marked or described as destructive and retain confirmation requirements.
+  - [x] README and spec present tools in stable groups without changing the MCP contract.
 
 ### Step 18 — Rewrite README for fast user comprehension
 

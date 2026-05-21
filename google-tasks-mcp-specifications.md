@@ -28,6 +28,17 @@ The server exposes exactly these 19 tools:
 
 Tool inputs and response shapes remain compact and provider-neutral. MCP responses must not expose raw Google API envelopes such as `kind`, `etag`, `selfLink`, pagination envelopes, or stack traces.
 
+## Tool Groups And Discovery Metadata
+
+Tools are conceptually grouped for documentation and client display:
+
+- **Tasklists:** `list_tasklists`, `create_tasklist`, `get_tasklist`, `update_tasklist`, `delete_tasklist`
+- **Task reads:** `list_tasks`, `get_task`
+- **Task summaries:** `today`, `overdue`, `upcoming`, `search`, `digest`
+- **Task mutations:** `clear_completed`, `add`, `complete`, `update`, `uncomplete`, `delete`, `move`
+
+The MCP Python SDK exposes standard tool titles, descriptions, and annotations for read-only, destructive, idempotent, and open-world hints. This server must populate those standard fields for all tools. It must not add provider-specific grouping fields or wrapper/category tools unless the MCP SDK/protocol gains a first-class grouping mechanism and this spec is updated.
+
 ## Tasklist Scope Defaults
 
 Tasklist-scoped inputs accept either a Google tasklist ID or an exact tasklist title.

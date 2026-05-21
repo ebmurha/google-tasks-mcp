@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import ToolAnnotations
 
 from . import digest, timezones
 from .errors import AuthRequired, ConfigError, GoogleTasksApiError, GoogleTasksMcpError, InvalidInputError, NotFoundError
@@ -27,6 +28,152 @@ F = TypeVar("F", bound=Callable[..., Any])
 class _ReadTasklist:
     id: str
     title: str
+
+
+@dataclass(frozen=True)
+class _ToolMetadata:
+    title: str
+    description: str
+    read_only: bool
+    destructive: bool
+    idempotent: bool
+
+
+_TOOL_METADATA: dict[str, _ToolMetadata] = {
+    "list_tasklists": _ToolMetadata(
+        title="List tasklists",
+        description="List compact tasklist IDs and titles for the authenticated Google account.",
+        read_only=True,
+        destructive=False,
+        idempotent=True,
+    ),
+    "create_tasklist": _ToolMetadata(
+        title="Create tasklist",
+        description="Create a tasklist and return compact metadata with a human summary.",
+        read_only=False,
+        destructive=False,
+        idempotent=False,
+    ),
+    "get_tasklist": _ToolMetadata(
+        title="Get tasklist",
+        description="Get one tasklist by ID, or by exact title when ID is omitted.",
+        read_only=True,
+        destructive=False,
+        idempotent=True,
+    ),
+    "update_tasklist": _ToolMetadata(
+        title="Rename tasklist",
+        description="Rename a tasklist by ID; title lookup is intentionally unsupported.",
+        read_only=False,
+        destructive=False,
+        idempotent=False,
+    ),
+    "delete_tasklist": _ToolMetadata(
+        title="Delete tasklist",
+        description="Delete a tasklist by ID after confirm=true; non-empty lists require force=true.",
+        read_only=False,
+        destructive=True,
+        idempotent=False,
+    ),
+    "list_tasks": _ToolMetadata(
+        title="List tasks",
+        description="List tasks from one tasklist with filters and pagination; omitted tasklist uses the default list.",
+        read_only=True,
+        destructive=False,
+        idempotent=True,
+    ),
+    "clear_completed": _ToolMetadata(
+        title="Clear completed tasks",
+        description="Hide completed tasks in one tasklist after confirm=true and report the cleared count.",
+        read_only=False,
+        destructive=True,
+        idempotent=False,
+    ),
+    "today": _ToolMetadata(
+        title="Tasks due today",
+        description="List incomplete tasks due today; omitted tasklist reads all tasklists.",
+        read_only=True,
+        destructive=False,
+        idempotent=True,
+    ),
+    "overdue": _ToolMetadata(
+        title="Overdue tasks",
+        description="List incomplete overdue tasks; omitted tasklist reads all tasklists.",
+        read_only=True,
+        destructive=False,
+        idempotent=True,
+    ),
+    "upcoming": _ToolMetadata(
+        title="Upcoming tasks",
+        description="List incomplete tasks due within N days; omitted tasklist reads all tasklists.",
+        read_only=True,
+        destructive=False,
+        idempotent=True,
+    ),
+    "search": _ToolMetadata(
+        title="Search tasks",
+        description="Search task titles and notes case-insensitively; omitted tasklist searches all tasklists.",
+        read_only=True,
+        destructive=False,
+        idempotent=True,
+    ),
+    "get_task": _ToolMetadata(
+        title="Get task",
+        description="Get one task by ID or exact title from one tasklist, including notes and link details.",
+        read_only=True,
+        destructive=False,
+        idempotent=True,
+    ),
+    "digest": _ToolMetadata(
+        title="Task digest",
+        description="Return a short text digest; omitted tasklist summarizes all tasklists.",
+        read_only=True,
+        destructive=False,
+        idempotent=True,
+    ),
+    "add": _ToolMetadata(
+        title="Add task",
+        description="Create a task or subtask in one tasklist, optionally after a sibling.",
+        read_only=False,
+        destructive=False,
+        idempotent=False,
+    ),
+    "complete": _ToolMetadata(
+        title="Complete task",
+        description="Mark one task complete by ID or exact title and return a rich mutation response.",
+        read_only=False,
+        destructive=False,
+        idempotent=False,
+    ),
+    "update": _ToolMetadata(
+        title="Update task",
+        description="Edit one task by ID, or by exact title for non-title fields.",
+        read_only=False,
+        destructive=False,
+        idempotent=False,
+    ),
+    "uncomplete": _ToolMetadata(
+        title="Reopen task",
+        description="Reopen one completed task by ID or exact title.",
+        read_only=False,
+        destructive=False,
+        idempotent=False,
+    ),
+    "delete": _ToolMetadata(
+        title="Delete task",
+        description="Delete one task by ID or exact title and return pre-deletion details.",
+        read_only=False,
+        destructive=True,
+        idempotent=False,
+    ),
+    "move": _ToolMetadata(
+        title="Move task",
+        description="Move one task by ID or exact title, optionally changing tasklist, parent, or sibling order.",
+        read_only=False,
+        destructive=False,
+        idempotent=False,
+    ),
+}
 
 
 def _error_payload(exc: Exception) -> dict[str, Any]:
@@ -170,6 +317,8 @@ def _today_in_timezone(tz: ZoneInfo | None) -> date:
 
 
 def list_tasklists_tool() -> dict[str, list[dict[str, str]]]:
+    """List compact tasklist IDs and titles for the authenticated account."""
+
     tasklists = tasks_api.list_tasklists()
     return {
         "tasklists": [
@@ -298,7 +447,7 @@ def list_tasks_tool(
     page_token: str | None = None,
     timezone: str | None = None,
 ) -> dict[str, Any]:
-    """List tasks with Google Tasks filters, auto-paginating up to 1000 tasks."""
+    """List tasks from one tasklist with filters and pagination."""
 
     tz = timezones.resolve_timezone(timezone)
     tasklist_id = _resolve(tasklist)
@@ -431,6 +580,8 @@ def delete_tasklist_tool(
 
 
 def today_tool(tasklist: str | None = None) -> dict[str, Any]:
+    """List incomplete tasks due today; omitted tasklist reads all tasklists."""
+
     tz = timezones.resolve_timezone()
     today = _today_in_timezone(tz)
     tomorrow = today + timedelta(days=1)
@@ -444,6 +595,8 @@ def today_tool(tasklist: str | None = None) -> dict[str, Any]:
 
 
 def overdue_tool(tasklist: str | None = None) -> dict[str, Any]:
+    """List incomplete overdue tasks; omitted tasklist reads all tasklists."""
+
     tz = timezones.resolve_timezone()
     today = _today_in_timezone(tz)
     task_items = _read_tasks(
@@ -455,6 +608,8 @@ def overdue_tool(tasklist: str | None = None) -> dict[str, Any]:
 
 
 def upcoming_tool(days: int = 7, tasklist: str | None = None) -> dict[str, Any]:
+    """List incomplete tasks due within N days; omitted tasklist reads all tasklists."""
+
     bounded_days = max(1, min(days, 365))
     tz = timezones.resolve_timezone()
     today = _today_in_timezone(tz)
@@ -474,6 +629,8 @@ def search_tool(
     tasklist: str | None = None,
     include_completed: bool = False,
 ) -> dict[str, Any]:
+    """Search task titles and notes; omitted tasklist searches all tasklists."""
+
     needle = query.casefold().strip()
     if not needle:
         return digest.shrink_list([])
@@ -506,6 +663,8 @@ def get_task_tool(
 
 
 def digest_tool(tasklist: str | None = None) -> dict[str, str]:
+    """Return a short text digest; omitted tasklist summarizes all tasklists."""
+
     task_items = _read_tasks(tasklist=tasklist)[:100]
     if not (tasklist or "").strip():
         task_items = [
@@ -757,5 +916,19 @@ def create_mcp_server() -> FastMCP:
         "move": move_tool,
     }
     for name, func in tool_map.items():
-        mcp.add_tool(_logged_tool(name, func), name=name, structured_output=True)
+        metadata = _TOOL_METADATA[name]
+        mcp.add_tool(
+            _logged_tool(name, func),
+            name=name,
+            title=metadata.title,
+            description=metadata.description,
+            annotations=ToolAnnotations(
+                title=metadata.title,
+                readOnlyHint=metadata.read_only,
+                destructiveHint=metadata.destructive,
+                idempotentHint=metadata.idempotent,
+                openWorldHint=True,
+            ),
+            structured_output=True,
+        )
     return mcp

@@ -76,29 +76,36 @@ OAuth gateway refresh tokens are persisted by hash in SQLite and rotate on use, 
 
 ## Tools
 
-The same 19 tools are available over local stdio, bearer-token HTTP, and OAuth 2.0 gateway HTTP modes.
+The same 19 tools are available over local stdio, bearer-token HTTP, and OAuth 2.0 gateway HTTP modes. MCP tool metadata includes concise titles, descriptions, and standard read-only/destructive/idempotent/open-world hints where supported by the client.
+
+| Group | Tools |
+|-------|-------|
+| Tasklists | `list_tasklists`, `create_tasklist`, `get_tasklist`, `update_tasklist`, `delete_tasklist` |
+| Task reads | `list_tasks`, `get_task` |
+| Task summaries | `today`, `overdue`, `upcoming`, `search`, `digest` |
+| Task mutations | `clear_completed`, `add`, `complete`, `update`, `uncomplete`, `delete`, `move` |
 
 | Tool | What it does |
 |------|--------------|
-| `list_tasklists` | List your task lists |
-| `create_tasklist` | Create a task list and return compact metadata with `human_summary` |
-| `get_tasklist` | Get a task list by ID or exact title |
-| `update_tasklist` | Rename a task list by ID only |
-| `delete_tasklist` | Delete a task list by ID after `confirm: true`; non-empty lists require `force: true` |
-| `list_tasks` | List tasks with date, completion, deleted, hidden, assigned, pagination, and timezone filters; auto-fetches up to 1000 tasks |
-| `clear_completed` | Hide completed tasks in a list after `confirm: true` and report `cleared_count` |
+| `list_tasklists` | List compact tasklist IDs and titles |
+| `create_tasklist` | Create a tasklist and return compact metadata with `human_summary` |
+| `get_tasklist` | Get one tasklist by ID or exact title |
+| `update_tasklist` | Rename a tasklist by ID only |
+| `delete_tasklist` | Delete a tasklist by ID after `confirm: true`; non-empty lists require `force: true` |
+| `list_tasks` | List tasks from one tasklist with filters and pagination; omitted `tasklist` uses the default list |
+| `get_task` | Get one task by ID or exact title, with notes, parent, position, and web link |
 | `today` | Incomplete tasks due today; all tasklists when `tasklist` is omitted |
 | `overdue` | Incomplete overdue tasks; all tasklists when `tasklist` is omitted |
-| `upcoming` | Tasks due within N days (default 7); all tasklists when `tasklist` is omitted |
+| `upcoming` | Incomplete tasks due within N days (default 7); all tasklists when `tasklist` is omitted |
 | `search` | Case-insensitive title + notes search; all tasklists when `tasklist` is omitted |
-| `get_task` | Single task by ID or exact title, with notes, parent, position, and web link |
-| `digest` | Short text summary (~30–100 tokens); all tasklists when `tasklist` is omitted |
+| `digest` | Short text summary (~30-100 tokens); all tasklists when `tasklist` is omitted |
+| `clear_completed` | Hide completed tasks in one tasklist after `confirm: true` and report `cleared_count` |
 | `add` | Create a task or subtask, optionally after a sibling, and return a rich mutation response with `human_summary` |
-| `complete` | Mark a task done by ID or exact title and return title, due date, tasklist, and `human_summary` |
-| `update` | Edit a task by ID, or by exact title for non-title fields; `status` may be `needsAction` or `completed` |
-| `uncomplete` | Reopen a completed task by ID or exact title and return a rich mutation response |
-| `delete` | Delete a task by ID or exact title and return pre-deletion task details with `deleted: true` |
-| `move` | Move a task by ID or exact title, optionally changing tasklist, parent, or sibling order |
+| `complete` | Mark one task done by ID or exact title and return title, due date, tasklist, and `human_summary` |
+| `update` | Edit one task by ID, or by exact title for non-title fields; `status` may be `needsAction` or `completed` |
+| `uncomplete` | Reopen one completed task by ID or exact title and return a rich mutation response |
+| `delete` | Delete one task by ID or exact title and return pre-deletion task details with `deleted: true` |
+| `move` | Move one task by ID or exact title, optionally changing tasklist, parent, or sibling order |
 
 All `tasklist` arguments accept both a list ID and a friendly title. Task title lookup is exact after trimming whitespace and ignores case; if more than one active task matches, the server returns a structured ambiguity error with candidate IDs.
 

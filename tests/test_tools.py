@@ -1003,14 +1003,15 @@ def test_cross_list_move_combines_destination_parent_and_previous(fake_task_stor
     assert all(item["id"] != "old-1" for item in fake_task_store[0]["default"])
 
 
-def test_registered_mcp_tools_have_exact_names():
+def test_registered_mcp_tools_have_exact_names_and_metadata():
     import asyncio
 
     async def run():
         mcp = server.create_mcp_server()
-        return [tool.name for tool in await mcp.list_tools()]
+        return await mcp.list_tools()
 
-    assert asyncio.run(run()) == [
+    tools = asyncio.run(run())
+    assert [tool.name for tool in tools] == [
         "list_tasklists",
         "create_tasklist",
         "get_tasklist",
@@ -1031,6 +1032,23 @@ def test_registered_mcp_tools_have_exact_names():
         "delete",
         "move",
     ]
+    by_name = {tool.name: tool for tool in tools}
+    for tool in tools:
+        assert tool.title
+        assert tool.description
+        assert tool.annotations is not None
+        assert tool.annotations.title == tool.title
+        assert tool.annotations.openWorldHint is True
+
+    assert by_name["today"].annotations.readOnlyHint is True
+    assert "all tasklists" in by_name["today"].description
+    assert by_name["search"].annotations.readOnlyHint is True
+    assert "all tasklists" in by_name["search"].description
+    assert by_name["add"].annotations.readOnlyHint is False
+    assert by_name["add"].annotations.destructiveHint is False
+    assert by_name["delete"].annotations.destructiveHint is True
+    assert by_name["delete_tasklist"].annotations.destructiveHint is True
+    assert "confirm=true" in by_name["delete_tasklist"].description
 
 
 def test_error_payload_for_structured_errors():
