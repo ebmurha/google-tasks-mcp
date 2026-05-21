@@ -39,6 +39,8 @@ Account selection is a transport/auth concern, not an MCP tool argument. MCP too
 
 Local stdio mode uses account `default` unless a future spec update defines another operator-controlled selection mechanism.
 
+Google Cloud OAuth client configuration is not the account selector. `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` and `GOOGLE_OAUTH_KEYS_PATH` identify the OAuth client app. One OAuth client JSON can be reused for several Google users, such as `personal` and `work`, as long as those users are allowed by the Google OAuth consent screen. Each `google-tasks-mcp-bootstrap --account-id ...` run stores a separate refresh token for whichever Google account the operator authorizes in the browser.
+
 ## Persistence Boundary
 
 SQLite may persist:

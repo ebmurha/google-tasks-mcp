@@ -22,6 +22,8 @@ In legacy mode, one deployment stores one Google refresh token. Every MCP client
 
 In multi-account bearer-token mode, the operator creates a separate bearer token for each `account_id`. The raw bearer token is shown once; only its hash is stored in SQLite. Each token selects one Google OAuth token row and one tasklist-title cache namespace. This supports several trusted accounts on one server without adding an MCP tool parameter for account selection.
 
+`GOOGLE_OAUTH_KEYS_PATH` is different: it points to the Google Cloud OAuth client JSON, not to a Google Tasks user account. A familiar setup can use one OAuth client JSON for both `personal` and `work`; the operator runs `google-tasks-mcp-bootstrap --account-id personal` while logged into the personal Google account, then `google-tasks-mcp-bootstrap --account-id work` while logged into the work Google account. Those two refresh tokens are stored separately and selected later by their bearer tokens.
+
 In this mode, a VPS is a normal place to host it. Your VPS is the remote machine running the MCP server, and your MCP clients connect to it over HTTPS.
 
 This is not a service for arbitrary users unless you intentionally share the endpoint and bearer token. Anyone with the bearer token can read and modify the connected Google Tasks account.

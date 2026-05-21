@@ -27,11 +27,16 @@ google-tasks-mcp-bootstrap
 For multiple Google accounts on one HTTP server, create a stored bearer token per account and bootstrap that account:
 
 ```bash
+google-tasks-mcp-create-bearer-token --account-id personal --label "Personal account"
+google-tasks-mcp-bootstrap --account-id personal   # log into your personal Google account
+
 google-tasks-mcp-create-bearer-token --account-id work --label "Work account"
-google-tasks-mcp-bootstrap --account-id work
+google-tasks-mcp-bootstrap --account-id work       # log into your work Google account
 ```
 
-Use the printed bearer token for that account's MCP client. The server stores only a token hash.
+Use each printed bearer token in the matching account's MCP client. The server stores only token hashes.
+
+`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` or `GOOGLE_OAUTH_KEYS_PATH` configure the Google Cloud OAuth app, not the Google user account. One OAuth client JSON can be reused for personal, work, and other Google accounts; each `google-tasks-mcp-bootstrap --account-id ...` run stores a separate Google refresh token for the account you log into in the browser.
 
 Start the server:
 
@@ -144,7 +149,7 @@ GOOGLE_OAUTH_KEYS_PATH=/home/you/.config/google-tasks-mcp/gcp-oauth.keys.json
 
 The repo-root fallback name `gcp-oauth.keys.json` is supported for convenience, but keeping OAuth credential JSON outside the repo is preferred.
 
-If the consent screen is in testing mode, add your Google account as a test user or refresh tokens will expire after 7 days.
+If the consent screen is in testing mode, add every Google account you bootstrap, such as both personal and work accounts, as test users or refresh tokens will expire after 7 days.
 
 ## Docker
 
