@@ -2,17 +2,17 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.ebmurha/google-tasks-mcp",
   "title": "Google Tasks MCP Server",
-  "description": "A private, context-efficient MCP server for Google Tasks.",
+  "description": "Manage Google Tasks from MCP-compatible AI clients.",
   "repository": {
     "url": "https://github.com/ebmurha/google-tasks-mcp",
     "source": "github"
   },
-  "version": "0.3.0",
+  "version": "0.4.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "google-tasks-mcp",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "transport": {
         "type": "stdio"
       },

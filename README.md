@@ -71,7 +71,7 @@ Example `.env` for a local web OAuth client:
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
 GOOGLE_REDIRECT_URI=http://127.0.0.1:8787/callback
-MCP_BEARER_TOKEN=generated-local-bearer-token
+MCP_BEARER_TOKEN=your-generated-token
 DB_PATH=./google-tasks.db
 BIND_HOST=127.0.0.1
 BIND_PORT=8787

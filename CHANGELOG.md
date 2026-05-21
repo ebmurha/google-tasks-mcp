@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## [0.4.0] - 2026-05-21
 
 ### Added
 - Added account-scoped bearer-token routing for HTTP mode. Operators can create hashed bearer tokens that route clients to separate Google Tasks accounts.
