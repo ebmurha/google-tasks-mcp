@@ -1,8 +1,8 @@
 {
   "name": "google-tasks-mcp",
   "displayName": "Google Tasks MCP Server",
-  "version": "0.3.0",
-  "description": "A private, context-efficient MCP server for Google Tasks.",
+  "version": "0.4.0",
+  "description": "Manage Google Tasks from MCP-compatible AI clients.",
   "transport": ["stdio", "streamable-http"],
   "category": "productivity",
   "tools": [

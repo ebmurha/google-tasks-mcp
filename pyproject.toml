@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "google-tasks-mcp"
-version = "0.3.0"
-description = "A self-hosted MCP server for Google Tasks."
+version = "0.4.0"
+description = "Manage Google Tasks from MCP-compatible AI clients."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
