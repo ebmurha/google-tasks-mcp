@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from google_tasks_mcp.account import reset_current_account_id, set_current_account_id
 from google_tasks_mcp import db
 
 
@@ -58,3 +59,56 @@ def test_delete_and_clear_tasklist_cache(configured_env):
     db.clear_tasklist_cache()
 
     assert db.list_tasklists_cached() == []
+
+
+def test_google_tokens_are_account_scoped(configured_env):
+    db.save_token("default-refresh", "default-access", 1234, "scope", account_id="default")
+    db.save_token("work-refresh", "work-access", 5678, "scope", account_id="work")
+
+    default_token = db.get_token("default")
+    work_token = db.get_token("work")
+
+    assert default_token is not None
+    assert work_token is not None
+    assert default_token.refresh_token == "default-refresh"
+    assert work_token.refresh_token == "work-refresh"
+
+
+def test_tasklist_cache_is_account_scoped(configured_env):
+    db.replace_tasklist_cache([("default-list", "Default")], account_id="default")
+    db.replace_tasklist_cache([("work-list", "Work")], account_id="work")
+
+    assert [(item.id, item.title) for item in db.list_tasklists_cached(account_id="default")] == [
+        ("default-list", "Default")
+    ]
+    assert [(item.id, item.title) for item in db.list_tasklists_cached(account_id="work")] == [
+        ("work-list", "Work")
+    ]
+
+
+def test_tasklist_cache_uses_current_account_context(configured_env):
+    db.replace_tasklist_cache([("work-list", "Work")], account_id="work")
+    token = set_current_account_id("work")
+    try:
+        assert [(item.id, item.title) for item in db.list_tasklists_cached()] == [("work-list", "Work")]
+    finally:
+        reset_current_account_id(token)
+
+
+def test_bearer_token_lookup_uses_hash_and_enabled_flag(configured_env):
+    token_hash = db.bearer_token_hash("secret-token")
+    db.save_bearer_token(account_id="work", token_hash=token_hash, label="Work")
+
+    record = db.get_bearer_token("secret-token")
+
+    assert record is not None
+    assert record.account_id == "work"
+    assert record.label == "Work"
+    assert record.enabled is True
+    assert record.token_hash == token_hash
+
+    db.revoke_bearer_token_hash(token_hash)
+
+    revoked = db.get_bearer_token("secret-token")
+    assert revoked is not None
+    assert revoked.enabled is False

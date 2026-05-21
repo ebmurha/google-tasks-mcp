@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        settings = get_settings(require_bearer_token=args.transport == "http")
+        settings = get_settings(require_bearer_token=False)
         init_db()
     except ConfigError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)

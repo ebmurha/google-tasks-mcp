@@ -90,19 +90,19 @@ Add future implementation steps here when the next release scope is known. Keep 
 
 ### Step 14 — Multi-account bearer-token routing
 
-- **Status:** Not started
+- **Status:** Complete
 - **Enhancement source:** `docs/planning/enhancements.md` bullet: "implement multi-user bearer token approach: so we support several accounts"
 - **Objective:** Let one running HTTP server serve multiple Google Tasks accounts by mapping each incoming bearer token to an isolated account context. Preserve the existing single-account `MCP_BEARER_TOKEN` behavior as the default compatibility path.
 - **Tasks / Actions:**
-  - [ ] Update `google-tasks-mcp-specifications.md` before code changes. If the spec file is absent, restore or recreate it as the source of truth first; do not change the account model only in code/docs.
-  - [ ] Define the account model in the spec and public docs: bearer token authenticates a caller and selects an `account_id`; MCP tool inputs do not gain an `account` parameter unless the spec explicitly chooses that contract.
-  - [ ] Add an account-aware request context, most likely via `contextvars`, that is set by HTTP auth middleware and read by `auth.py`, `tasks.py`, and `resolver.py`. Local stdio should continue to use one configured default account.
-  - [ ] Extend SQLite with account-scoped auth and cache storage: Google OAuth token rows keyed by `account_id`, tasklist cache rows keyed by `(account_id, tasklist_id)`, and a migration path from the legacy single-row `oauth_token` / tasklist cache to account `default`.
-  - [ ] Implement bearer-token registration without storing or logging raw tokens. Store only a stable secret hash plus `account_id`, label, enabled/revoked status, and timestamps. Provide an operator command or documented workflow that prints a newly generated token once and stores only its hash.
-  - [ ] Update `BearerAuthMiddleware` and OAuth-gateway static bearer compatibility so a valid bearer token sets the right `account_id`; invalid, missing, disabled, or revoked tokens return compact 401 errors with no token echoes.
-  - [ ] Update OAuth bootstrap and refresh-token setup scripts to accept an `--account-id` and write the Google refresh token for that account only.
-  - [ ] Thread `account_id` through Google credential loading, tasklist resolver cache, default tasklist fallback, and tasklist title lookup. No task data or filtered views may be persisted as part of this work.
-  - [ ] Update `README.md`, `MCP_SERVER_GUIDE.md`, `.env.example`, and deployment templates with placeholder-only multi-account configuration examples.
+  - [x] Update `google-tasks-mcp-specifications.md` before code changes. If the spec file is absent, restore or recreate it as the source of truth first; do not change the account model only in code/docs.
+  - [x] Define the account model in the spec and public docs: bearer token authenticates a caller and selects an `account_id`; MCP tool inputs do not gain an `account` parameter unless the spec explicitly chooses that contract.
+  - [x] Add an account-aware request context, most likely via `contextvars`, that is set by HTTP auth middleware and read by `auth.py`, `tasks.py`, and `resolver.py`. Local stdio should continue to use one configured default account.
+  - [x] Extend SQLite with account-scoped auth and cache storage: Google OAuth token rows keyed by `account_id`, tasklist cache rows keyed by `(account_id, tasklist_id)`, and a migration path from the legacy single-row `oauth_token` / tasklist cache to account `default`.
+  - [x] Implement bearer-token registration without storing or logging raw tokens. Store only a stable secret hash plus `account_id`, label, enabled/revoked status, and timestamps. Provide an operator command or documented workflow that prints a newly generated token once and stores only its hash.
+  - [x] Update `BearerAuthMiddleware` and OAuth-gateway static bearer compatibility so a valid bearer token sets the right `account_id`; invalid, missing, disabled, or revoked tokens return compact 401 errors with no token echoes.
+  - [x] Update OAuth bootstrap and refresh-token setup scripts to accept an `--account-id` and write the Google refresh token for that account only.
+  - [x] Thread `account_id` through Google credential loading, tasklist resolver cache, default tasklist fallback, and tasklist title lookup. No task data or filtered views may be persisted as part of this work.
+  - [x] Update `README.md`, `MCP_SERVER_GUIDE.md`, `.env.example`, and deployment templates with placeholder-only multi-account configuration examples.
 - **Tests to run:**
   - `pytest tests/test_db.py tests/test_auth.py tests/test_http_app.py tests/test_resolver.py -x`
   - `pytest -x`
@@ -112,11 +112,11 @@ Add future implementation steps here when the next release scope is known. Keep 
   - Do not store, print, snapshot, or return raw bearer tokens, Google refresh tokens, access tokens, client secrets, or OAuth codes.
   - Cross-account leakage is a release blocker: tasklists, tasks, defaults, OAuth tokens, and resolver caches must be isolated by `account_id`.
 - **Acceptance criteria / verification checklist:**
-  - [ ] Existing single-account installs using `MCP_BEARER_TOKEN` and one bootstrapped Google account still work without migration instructions beyond normal upgrade notes.
-  - [ ] Two different bearer tokens in the same process resolve to two different Google OAuth token rows and cannot see each other's tasklists or cached tasklist titles.
-  - [ ] Revoking or disabling one bearer token does not affect other accounts.
-  - [ ] Logs include only non-sensitive account labels/IDs and never raw tokens.
-  - [ ] All account-model changes are documented in the spec, README, guide, changelog, and migration notes.
+  - [x] Existing single-account installs using `MCP_BEARER_TOKEN` and one bootstrapped Google account still work without migration instructions beyond normal upgrade notes.
+  - [x] Two different bearer tokens in the same process resolve to two different Google OAuth token rows and cannot see each other's tasklists or cached tasklist titles.
+  - [x] Revoking or disabling one bearer token does not affect other accounts.
+  - [x] Logs include only non-sensitive account labels/IDs and never raw tokens.
+  - [x] All account-model changes are documented in the spec, README, guide, changelog, and migration notes.
 
 ### Step 15 — Fix MCP OAuth re-authorize loop and auth bypass
 

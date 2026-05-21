@@ -6,6 +6,7 @@ import sqlite3
 
 import pytest
 
+from google_tasks_mcp.account import reset_current_account_id, set_current_account_id
 from google_tasks_mcp import db, resolver
 from google_tasks_mcp.errors import AmbiguousTitleError, NotFoundError
 
@@ -175,6 +176,25 @@ def test_delete_tasklist_cached_clears_memory_and_sqlite(fake_resolver_service):
     assert [(item.id, item.title) for item in db.list_tasklists_cached()] == [("def", "Personal")]
     assert resolver.resolve_tasklist_by_title("EB Tasks") == "abc"
     assert len(calls) == 2
+
+
+def test_resolver_caches_are_account_scoped(monkeypatch, configured_env):
+    calls: list[dict] = []
+    responses = [{"items": [{"id": "network", "title": "Network"}]}]
+    db.replace_tasklist_cache([("personal", "Inbox")], account_id="default")
+    db.replace_tasklist_cache([("work", "Inbox")], account_id="work")
+    monkeypatch.setattr(resolver, "build", lambda *args, **kwargs: _Service(responses, calls))
+    monkeypatch.setattr(resolver, "get_credentials", lambda: object())
+
+    assert resolver.resolve_tasklist_by_title("Inbox") == "personal"
+
+    token = set_current_account_id("work")
+    try:
+        assert resolver.resolve_tasklist_by_title("Inbox") == "work"
+    finally:
+        reset_current_account_id(token)
+
+    assert calls == []
 
 
 def test_concurrent_resolver_calls_single_flight(monkeypatch, configured_env):

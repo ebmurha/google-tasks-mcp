@@ -17,12 +17,24 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from mcp_oauth_gateway import add_mcp_oauth_gateway
 
+from . import db
+from .account import DEFAULT_ACCOUNT_ID, reset_current_account_id, set_current_account_id
 from .config import get_settings
 from .errors import ConfigError
 from .server import create_mcp_server
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+def resolve_bearer_token_account(token: str) -> str | None:
+    settings = get_settings()
+    if settings.mcp_bearer_token and hmac.compare_digest(token, settings.mcp_bearer_token):
+        return DEFAULT_ACCOUNT_ID
+    record = db.get_bearer_token(token)
+    if record and record.enabled:
+        return record.account_id
+    return None
 
 
 class BearerAuthMiddleware(BaseHTTPMiddleware):
@@ -34,17 +46,25 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         if not request.url.path.startswith("/mcp"):
             return await call_next(request)
 
-        try:
-            expected = get_settings(require_bearer_token=True).mcp_bearer_token
-        except ConfigError:
-            LOGGER.error("MCP bearer token is not configured")
-            return JSONResponse({"error": "Server authentication is not configured"}, status_code=500)
-
         authorization = request.headers.get("authorization", "")
-        if not hmac.compare_digest(authorization, f"Bearer {expected}"):
+        if not authorization.lower().startswith("bearer "):
             return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
-        return await call_next(request)
+        token = authorization[7:].strip()
+        try:
+            account_id = resolve_bearer_token_account(token)
+        except ConfigError:
+            LOGGER.error("MCP bearer token validation is not configured")
+            return JSONResponse({"error": "Server authentication is not configured"}, status_code=500)
+
+        if account_id is None:
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        context_token = set_current_account_id(account_id)
+        try:
+            return await call_next(request)
+        finally:
+            reset_current_account_id(context_token)
 
 
 async def healthz(_request: Request) -> JSONResponse:
@@ -104,6 +124,9 @@ def create_app() -> ASGIApp:
         signing_secret=os.environ["MCP_OAUTH_SIGNING_SECRET"],
         admin_password=os.environ.get("MCP_OAUTH_ADMIN_PASSWORD"),
         static_bearer_token=os.environ.get("MCP_BEARER_TOKEN"),
+        bearer_token_resolver=resolve_bearer_token_account,
+        set_account_context=set_current_account_id,
+        reset_account_context=reset_current_account_id,
         allowed_redirect_uris=redirect_uris,
     )
 
