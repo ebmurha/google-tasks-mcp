@@ -24,6 +24,15 @@ google-tasks-mcp-bootstrap
 # Open the printed URL, approve, paste back the code.
 ```
 
+For multiple Google accounts on one HTTP server, create a stored bearer token per account and bootstrap that account:
+
+```bash
+google-tasks-mcp-create-bearer-token --account-id work --label "Work account"
+google-tasks-mcp-bootstrap --account-id work
+```
+
+Use the printed bearer token for that account's MCP client. The server stores only a token hash.
+
 Start the server:
 
 ```bash
@@ -54,7 +63,7 @@ args:    ["-m", "google_tasks_mcp", "--transport", "stdio"]
 
 The HTTP server starts in one of two modes depending on environment variables:
 
-**Bearer-token mode** (default, when `MCP_OAUTH_ISSUER` is not set) — `/mcp` requires `Authorization: Bearer <MCP_BEARER_TOKEN>`. Right for Claude Desktop, Codex, and any client that holds a pre-configured token.
+**Bearer-token mode** (default, when `MCP_OAUTH_ISSUER` is not set) — `/mcp` requires `Authorization: Bearer <token>`. `MCP_BEARER_TOKEN` is the legacy single-account token for account `default`; stored hashed bearer tokens created with `google-tasks-mcp-create-bearer-token` can route different clients to different Google accounts.
 
 **OAuth 2.0 gateway mode** (when `MCP_OAUTH_ISSUER` is set) — the server also serves `/.well-known/oauth-authorization-server`, `/authorize`, `/token`, and `/revoke`. `/mcp` accepts both OAuth-issued tokens and the legacy `MCP_BEARER_TOKEN`. Right for MCP web clients (e.g. Claude.ai) that perform a full OAuth flow. See `.env.example` for the required variables (`MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET`, `MCP_OAUTH_SIGNING_SECRET`). `MCP_OAUTH_REDIRECT_URIS` is optional — leave it unset to keep OAuth disabled even when `MCP_OAUTH_ISSUER` is present.
 
@@ -84,7 +93,7 @@ The same 19 tools are available over local stdio, bearer-token HTTP, and OAuth 2
 | `delete` | Delete a task by ID or exact title and return pre-deletion task details with `deleted: true` |
 | `move` | Move a task by ID or exact title, optionally changing tasklist, parent, or sibling order |
 
-All `tasklist` arguments accept both a list ID and a friendly title. Task title lookup is exact after trimming whitespace and ignores case; if more than one active task matches, the server returns a structured ambiguity error with candidate IDs. When `tasklist` is omitted, the server uses `DEFAULT_TASKLIST` from `.env`, or the first list returned by Google. Task list rename and delete tools require an ID to reduce accidental destructive changes. Cross-list task moves are emulated by creating the task in the destination list and deleting the original, so the moved task has a new Google task ID.
+All `tasklist` arguments accept both a list ID and a friendly title. Task title lookup is exact after trimming whitespace and ignores case; if more than one active task matches, the server returns a structured ambiguity error with candidate IDs. When `tasklist` is omitted, the server uses `DEFAULT_TASKLIST` from `.env`, or the first list returned by Google for the authenticated account. Task list rename and delete tools require an ID to reduce accidental destructive changes. Cross-list task moves are emulated by creating the task in the destination list and deleting the original, so the moved task has a new Google task ID.
 
 ### Limitations
 

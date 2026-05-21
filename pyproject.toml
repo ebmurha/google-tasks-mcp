@@ -30,6 +30,7 @@ dev = [
 google-tasks-mcp = "google_tasks_mcp.__main__:main"
 google-tasks-mcp-bootstrap = "google_tasks_mcp.scripts.bootstrap_oauth:main"
 google-tasks-mcp-set-refresh-token = "google_tasks_mcp.scripts.set_refresh_token:main"
+google-tasks-mcp-create-bearer-token = "google_tasks_mcp.scripts.create_bearer_token:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

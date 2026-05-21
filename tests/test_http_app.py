@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 from starlette.testclient import TestClient
 
+from google_tasks_mcp import db
+from google_tasks_mcp.account import get_current_account_id
 from google_tasks_mcp.config import reset_settings_cache
-from google_tasks_mcp.http_app import create_app, create_protected_app
+from google_tasks_mcp.http_app import BearerAuthMiddleware, create_app, create_protected_app
+
+
+async def _account_endpoint(_request):
+    return JSONResponse({"account_id": get_current_account_id()})
 
 
 def test_healthz_is_unauthenticated():
@@ -48,6 +57,33 @@ def test_mcp_tools_list_accepts_valid_bearer_token(configured_env):
     assert "list_tasklists" in response.text
     assert "today" in response.text
     assert "move" in response.text
+
+
+def test_bearer_middleware_routes_stored_token_to_account(configured_env):
+    db.save_bearer_token(
+        account_id="work",
+        token_hash=db.bearer_token_hash("work-token"),
+        label="Work",
+    )
+    app = Starlette(routes=[Route("/mcp", _account_endpoint, methods=["POST"])])
+    app.add_middleware(BearerAuthMiddleware)
+
+    with TestClient(app) as client:
+        response = client.post("/mcp", headers={"Authorization": "Bearer work-token"})
+
+    assert response.status_code == 200
+    assert response.json() == {"account_id": "work"}
+
+
+def test_bearer_middleware_routes_legacy_env_token_to_default(configured_env):
+    app = Starlette(routes=[Route("/mcp", _account_endpoint, methods=["POST"])])
+    app.add_middleware(BearerAuthMiddleware)
+
+    with TestClient(app) as client:
+        response = client.post("/mcp", headers={"Authorization": "Bearer bearer-token"})
+
+    assert response.status_code == 200
+    assert response.json() == {"account_id": "default"}
 
 
 def test_oauth_gateway_accepts_legacy_bearer_token(configured_env, monkeypatch):

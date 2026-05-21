@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from google_tasks_mcp.account import DEFAULT_ACCOUNT_ID, set_current_account_id
 from google_tasks_mcp.config import reset_settings_cache
 from google_tasks_mcp.tasks import clear_tasklist_cache
 
@@ -24,9 +25,11 @@ def reset_global_state(monkeypatch: pytest.MonkeyPatch, tmp_path):
     ]:
         monkeypatch.delenv(name, raising=False)
     reset_settings_cache()
+    set_current_account_id(DEFAULT_ACCOUNT_ID)
     clear_tasklist_cache()
     yield
     reset_settings_cache()
+    set_current_account_id(DEFAULT_ACCOUNT_ID)
     clear_tasklist_cache()
 
 

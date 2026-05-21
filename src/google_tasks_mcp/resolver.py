@@ -12,6 +12,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from . import db
+from .account import get_current_account_id
 from .auth import get_credentials
 from .config import get_settings
 from .errors import AmbiguousTitleError, ConfigError, GoogleTasksApiError, NotFoundError
@@ -35,7 +36,7 @@ class _Cache:
     by_title: dict[str, list[str]]
 
 
-_cache: _Cache | None = None
+_caches: dict[str, _Cache] = {}
 _refresh_lock = threading.Lock()
 
 
@@ -55,28 +56,28 @@ def _normalize_title(value: str) -> str:
 
 
 def _is_fresh(now: float | None = None) -> bool:
-    if _cache is None:
+    cache = _caches.get(get_current_account_id())
+    if cache is None:
         return False
     checked_at = time.time() if now is None else now
-    return checked_at - _cache.fetched_at < TASKLIST_CACHE_SECONDS
+    return checked_at - cache.fetched_at < TASKLIST_CACHE_SECONDS
 
 
 def invalidate() -> None:
     """Drop the in-memory tasklist cache."""
 
-    global _cache
     with _refresh_lock:
-        _cache = None
+        _caches.pop(get_current_account_id(), None)
 
 
 def clear_tasklist_cache() -> None:
     """Drop both in-memory and SQLite tasklist cache tiers."""
 
-    global _cache
+    account_id = get_current_account_id()
     with _refresh_lock:
-        _cache = None
+        _caches.pop(account_id, None)
         try:
-            db.clear_tasklist_cache()
+            db.clear_tasklist_cache(account_id=account_id)
         except ConfigError:
             pass
 
@@ -84,11 +85,11 @@ def clear_tasklist_cache() -> None:
 def delete_tasklist_cached(tasklist_id: str) -> None:
     """Drop a deleted tasklist from both cache tiers."""
 
-    global _cache
+    account_id = get_current_account_id()
     with _refresh_lock:
-        _cache = None
+        _caches.pop(account_id, None)
         try:
-            db.delete_tasklist_cached(tasklist_id)
+            db.delete_tasklist_cached(tasklist_id, account_id=account_id)
         except ConfigError:
             pass
 
@@ -102,8 +103,8 @@ def _build_cache(entries: list[TasklistEntry], fetched_at: float) -> _Cache:
     return _Cache(fetched_at=fetched_at, by_id=by_id, by_title=dict(by_title))
 
 
-def _seed_from_sqlite(now: float) -> _Cache | None:
-    rows = db.list_tasklists_cached()
+def _seed_from_sqlite(now: float, account_id: str) -> _Cache | None:
+    rows = db.list_tasklists_cached(account_id=account_id)
     if not rows:
         return None
 
@@ -116,21 +117,21 @@ def _seed_from_sqlite(now: float) -> _Cache | None:
 
 
 def _refresh(*, force: bool = False) -> _Cache:
-    global _cache
+    account_id = get_current_account_id()
 
     now = time.time()
     if not force and _is_fresh(now):
-        return _cache  # type: ignore[return-value]
+        return _caches[account_id]
 
     with _refresh_lock:
         now = time.time()
         if not force and _is_fresh(now):
-            return _cache  # type: ignore[return-value]
+            return _caches[account_id]
 
         if not force:
-            seeded = _seed_from_sqlite(now)
+            seeded = _seed_from_sqlite(now, account_id)
             if seeded is not None:
-                _cache = seeded
+                _caches[account_id] = seeded
                 return seeded
 
         service = _service()
@@ -159,9 +160,13 @@ def _refresh(*, force: bool = False) -> _Cache:
             if not page_token:
                 break
 
-        _cache = _build_cache(entries, fetched_at=now)
-        db.replace_tasklist_cache((entry.id, entry.title) for entry in _cache.by_id.values())
-        return _cache
+        cache = _build_cache(entries, fetched_at=now)
+        _caches[account_id] = cache
+        db.replace_tasklist_cache(
+            ((entry.id, entry.title) for entry in cache.by_id.values()),
+            account_id=account_id,
+        )
+        return cache
 
 
 def list_tasklists() -> list[dict[str, str]]:

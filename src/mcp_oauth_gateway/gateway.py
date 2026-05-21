@@ -30,6 +30,9 @@ def add_mcp_oauth_gateway(
     auth_code_ttl: int = 300,
     admin_password: str = None,
     static_bearer_token: str = None,
+    bearer_token_resolver=None,
+    set_account_context=None,
+    reset_account_context=None,
     mcp_path_prefix: str = "/mcp",
     enable_dcr: bool = False,
 ) -> ASGIApp:
@@ -70,6 +73,9 @@ def add_mcp_oauth_gateway(
         auth_code_ttl=auth_code_ttl,
         admin_password=admin_password,
         static_bearer_token=static_bearer_token,
+        bearer_token_resolver=bearer_token_resolver,
+        set_account_context=set_account_context,
+        reset_account_context=reset_account_context,
         mcp_path_prefix=mcp_path_prefix,
         enable_dcr=enable_dcr,
     )

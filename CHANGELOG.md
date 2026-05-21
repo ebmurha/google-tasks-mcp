@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+- Added account-scoped bearer-token routing for HTTP mode. Operators can create hashed bearer tokens that route clients to separate Google Tasks accounts.
+- Added account-scoped Google OAuth token and tasklist-title cache storage while preserving legacy `MCP_BEARER_TOKEN` behavior for account `default`.
+
+### Compatibility
+- This is additive for existing single-account installs using `MCP_BEARER_TOKEN`.
+
 ## [0.3.0] - 2026-05-09
 
 ### Added

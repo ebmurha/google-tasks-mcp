@@ -16,9 +16,11 @@ All three are valid MCP distribution models. The difference is how the client re
 
 ## Private Single-Account Mode
 
-The current design is private and single-account.
+The default design is private and single-account, with an optional multi-account bearer-token mode for trusted operators.
 
-One deployment stores one Google refresh token. Every MCP client with the bearer token can act on that same Google Tasks account. That is appropriate for a personal assistant setup, private automation, or a trusted internal tool.
+In legacy mode, one deployment stores one Google refresh token. Every MCP client with `MCP_BEARER_TOKEN` can act on that same Google Tasks account. That is appropriate for a personal assistant setup, private automation, or a trusted internal tool.
+
+In multi-account bearer-token mode, the operator creates a separate bearer token for each `account_id`. The raw bearer token is shown once; only its hash is stored in SQLite. Each token selects one Google OAuth token row and one tasklist-title cache namespace. This supports several trusted accounts on one server without adding an MCP tool parameter for account selection.
 
 In this mode, a VPS is a normal place to host it. Your VPS is the remote machine running the MCP server, and your MCP clients connect to it over HTTPS.
 
@@ -39,7 +41,8 @@ The safe default is that credentials never leave the operator's control:
 - Google OAuth client secrets stay in `.env`, a private environment store, or `gcp-oauth.keys.json`.
 - `gcp-oauth.keys.json` is ignored by git and must not be published.
 - The Google refresh token stays in the operator's SQLite database or private persistent store.
-- The bearer token is shared only with trusted MCP clients.
+- Bearer tokens are shared only with trusted MCP clients.
+- Multi-account bearer tokens are stored only as hashes; raw tokens are not recoverable from SQLite.
 - A registry listing should distribute code and metadata, not your personal Google credentials or refresh token.
 
 ## Hosting Options
@@ -96,17 +99,15 @@ Use [DISTRIBUTION.md](./DISTRIBUTION.md) for the current target list and bundlin
 
 If "other people can use it" means they install their own copy, the public README is enough.
 
-If "other people can connect to your hosted MCP server and use their own Google Tasks account", the current design is missing several things:
+If "other people can connect to your hosted MCP server as an open public service", the current design is still missing several things:
 
-- multi-user OAuth flow;
-- per-user token storage;
-- a user identity model;
-- bearer-token-to-user mapping or another auth system;
-- account isolation in every tool call;
+- self-service user onboarding;
+- public user identity and lifecycle management;
+- user-controlled Google OAuth consent per account;
 - an onboarding flow for users to connect Google;
 - operational controls such as revocation, audit logs, and rate limits.
 
-Those are intentionally out of scope for the first implementation.
+The stored bearer-token account model is suitable for trusted operator-created accounts, not arbitrary public signup.
 
 If the goal is public discovery without shared credentials, publish the project/package and require each user to configure one of:
 
@@ -121,10 +122,10 @@ For your planned VPS deployment, treat this as a private remote MCP server:
 1. Host the Python service on the VPS.
 2. Put Caddy or another reverse proxy in front of it.
 3. Serve `/mcp` over HTTPS.
-4. Keep `/mcp` protected by `MCP_BEARER_TOKEN`.
+4. Keep `/mcp` protected by `MCP_BEARER_TOKEN` or stored per-account bearer tokens.
 5. Bootstrap OAuth once for your Google account.
 6. Add the HTTPS URL and bearer token to your MCP client.
 
 That is enough for any MCP-compatible client or app to call the MCP tools, as long as it supports remote HTTP MCP connections.
 
-Do not advertise your personal endpoint as a public service unless you first add multi-user account isolation.
+Do not advertise your personal endpoint as a public service unless you first add self-service onboarding, public-user controls, auditability, and rate limiting.

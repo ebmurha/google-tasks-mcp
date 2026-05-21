@@ -13,6 +13,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 
 from . import db
+from .account import get_current_account_id
 from .config import Settings, get_settings
 from .errors import AuthRequired
 
@@ -85,7 +86,7 @@ def _expiry_epoch(credentials: Credentials) -> int:
     return int(credentials.expiry.replace(tzinfo=timezone.utc).timestamp())
 
 
-def exchange_code(code: str, *, flow: Flow | None = None) -> db.Token:
+def exchange_code(code: str, *, flow: Flow | None = None, account_id: str | None = None) -> db.Token:
     code = _extract_code(code)
     if not code:
         raise AuthRequired("No OAuth code was provided")
@@ -106,19 +107,25 @@ def exchange_code(code: str, *, flow: Flow | None = None) -> db.Token:
         access=credentials.token,
         expires_at=_expiry_epoch(credentials),
         scope=scope,
+        account_id=account_id,
     )
-    token = db.get_token()
+    token = db.get_token(account_id)
     if token is None:
         raise AuthRequired("OAuth token could not be stored")
     return token
 
 
-def set_refresh_token(refresh_token: str, *, scope: str | None = None) -> db.Token:
+def set_refresh_token(
+    refresh_token: str,
+    *,
+    scope: str | None = None,
+    account_id: str | None = None,
+) -> db.Token:
     refresh_token = refresh_token.strip()
     if not refresh_token:
         raise AuthRequired("Refresh token must not be empty")
-    db.save_token(refresh=refresh_token, access=None, expires_at=0, scope=scope or SCOPES[0])
-    token = db.get_token()
+    db.save_token(refresh=refresh_token, access=None, expires_at=0, scope=scope or SCOPES[0], account_id=account_id)
+    token = db.get_token(account_id)
     if token is None:
         raise AuthRequired("Refresh token could not be stored")
     return token
@@ -132,9 +139,10 @@ def _needs_refresh(token: db.Token) -> bool:
 
 def get_credentials() -> Credentials:
     settings = get_settings()
-    token = db.get_token()
+    account_id = get_current_account_id()
+    token = db.get_token(account_id)
     if token is None:
-        raise AuthRequired("Run bootstrap_oauth.py before using Google Tasks")
+        raise AuthRequired(f"Run bootstrap_oauth.py for account '{account_id}' before using Google Tasks")
 
     credentials = Credentials(
         token=token.access_token,
@@ -152,6 +160,6 @@ def get_credentials() -> Credentials:
             raise AuthRequired("Google access token refresh failed; run bootstrap_oauth.py") from exc
         if not credentials.token:
             raise AuthRequired("Google access token refresh returned no token")
-        db.update_access_token(credentials.token, _expiry_epoch(credentials))
+        db.update_access_token(credentials.token, _expiry_epoch(credentials), account_id=account_id)
 
     return credentials

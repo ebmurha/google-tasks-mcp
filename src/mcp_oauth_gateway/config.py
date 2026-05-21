@@ -1,6 +1,6 @@
 """Configuration for the MCP OAuth Gateway."""
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, Callable, List, Optional
 import secrets
 
 
@@ -43,6 +43,11 @@ class GatewayConfig:
 
     # Legacy static Bearer token accepted alongside OAuth-issued tokens.
     static_bearer_token: Optional[str] = None
+
+    # Optional host-app hooks for routing bearer tokens to request-local accounts.
+    bearer_token_resolver: Optional[Callable[[str], Optional[str]]] = None
+    set_account_context: Optional[Callable[[str], Any]] = None
+    reset_account_context: Optional[Callable[[Any], None]] = None
 
     def validate(self):
         assert self.issuer.startswith("https://"), "issuer must be https"
