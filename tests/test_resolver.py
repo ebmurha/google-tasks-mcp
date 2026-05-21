@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import threading
 import time
+import sqlite3
 
 import pytest
 
-from google_tasks_mcp import resolver
+from google_tasks_mcp import db, resolver
 from google_tasks_mcp.errors import AmbiguousTitleError, NotFoundError
 
 
@@ -64,6 +65,54 @@ def test_resolve_tasklist_by_title_uses_cache(fake_resolver_service):
     assert len(calls) == 1
 
 
+def test_cold_start_seeds_from_sqlite_without_google_call(monkeypatch, configured_env):
+    calls: list[dict] = []
+    responses = [{"items": [{"id": "network", "title": "Network"}]}]
+    db.replace_tasklist_cache([("abc", "EB Tasks"), ("def", "Personal")])
+    monkeypatch.setattr(resolver, "build", lambda *args, **kwargs: _Service(responses, calls))
+    monkeypatch.setattr(resolver, "get_credentials", lambda: object())
+
+    assert resolver.resolve_tasklist_by_title("eb tasks") == "abc"
+    assert resolver.resolve_tasklist("def") == "def"
+    assert calls == []
+
+
+def test_stale_sqlite_seed_refreshes_from_google(monkeypatch, configured_env):
+    calls: list[dict] = []
+    responses = [{"items": [{"id": "fresh", "title": "Fresh Tasks"}]}]
+    db.replace_tasklist_cache([("stale", "Old Tasks")])
+    with sqlite3.connect(configured_env / "test.db") as conn:
+        conn.execute(
+            "UPDATE tasklist_cache SET updated_at = ?",
+            (int(time.time()) - resolver.TASKLIST_CACHE_SECONDS - 1,),
+        )
+    monkeypatch.setattr(resolver, "build", lambda *args, **kwargs: _Service(responses, calls))
+    monkeypatch.setattr(resolver, "get_credentials", lambda: object())
+
+    assert resolver.resolve_tasklist_by_title("Fresh Tasks") == "fresh"
+
+    assert len(calls) == 1
+    assert [(item.id, item.title) for item in db.list_tasklists_cached()] == [("fresh", "Fresh Tasks")]
+
+
+def test_write_through_replaces_stale_sqlite_rows(monkeypatch, configured_env):
+    calls: list[dict] = []
+    responses = [{"items": [{"id": "abc", "title": "EB Tasks"}]}]
+    db.replace_tasklist_cache([("stale", "Deleted Elsewhere")])
+    with sqlite3.connect(configured_env / "test.db") as conn:
+        conn.execute(
+            "UPDATE tasklist_cache SET updated_at = ?",
+            (int(time.time()) - resolver.TASKLIST_CACHE_SECONDS - 1,),
+        )
+    monkeypatch.setattr(resolver, "build", lambda *args, **kwargs: _Service(responses, calls))
+    monkeypatch.setattr(resolver, "get_credentials", lambda: object())
+
+    assert resolver.resolve_tasklist_by_title("EB Tasks") == "abc"
+
+    assert len(calls) == 1
+    assert [(item.id, item.title) for item in db.list_tasklists_cached()] == [("abc", "EB Tasks")]
+
+
 def test_resolver_refreshes_once_on_title_miss(monkeypatch, configured_env):
     calls: list[dict] = []
     responses = [
@@ -99,11 +148,31 @@ def test_resolver_ambiguous_title(monkeypatch, configured_env):
     assert [item["id"] for item in exc_info.value.details["candidates"]] == ["one", "two"]
 
 
-def test_invalidate_clears_cache(fake_resolver_service):
+def test_invalidate_clears_only_memory_and_reseeds_from_sqlite(fake_resolver_service):
     calls, _responses = fake_resolver_service
 
     assert resolver.resolve_tasklist_by_title("EB Tasks") == "abc"
     resolver.invalidate()
+    assert resolver.resolve_tasklist_by_title("EB Tasks") == "abc"
+    assert len(calls) == 1
+
+
+def test_clear_tasklist_cache_clears_memory_and_sqlite(fake_resolver_service):
+    calls, _responses = fake_resolver_service
+
+    assert resolver.resolve_tasklist_by_title("EB Tasks") == "abc"
+    resolver.clear_tasklist_cache()
+    assert db.list_tasklists_cached() == []
+    assert resolver.resolve_tasklist_by_title("EB Tasks") == "abc"
+    assert len(calls) == 2
+
+
+def test_delete_tasklist_cached_clears_memory_and_sqlite(fake_resolver_service):
+    calls, _responses = fake_resolver_service
+
+    assert resolver.resolve_tasklist_by_title("EB Tasks") == "abc"
+    resolver.delete_tasklist_cached("abc")
+    assert [(item.id, item.title) for item in db.list_tasklists_cached()] == [("def", "Personal")]
     assert resolver.resolve_tasklist_by_title("EB Tasks") == "abc"
     assert len(calls) == 2
 

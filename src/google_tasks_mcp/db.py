@@ -6,7 +6,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Iterable, Iterator
 
 from .config import get_settings
 
@@ -128,7 +128,7 @@ def list_tasklists_cached() -> list[Tasklist]:
             """
             SELECT id, title, updated_at
             FROM tasklist_cache
-            ORDER BY title COLLATE NOCASE ASC
+            ORDER BY rowid ASC
             """
         )
         return [
@@ -137,16 +137,27 @@ def list_tasklists_cached() -> list[Tasklist]:
         ]
 
 
-def upsert_tasklist(id: str, title: str) -> None:
+def replace_tasklist_cache(entries: Iterable[tuple[str, str]]) -> None:
     init_db()
+    rows = [(tasklist_id, title, _now()) for tasklist_id, title in entries]
     with _connect() as conn:
-        conn.execute(
+        conn.execute("DELETE FROM tasklist_cache")
+        conn.executemany(
             """
             INSERT INTO tasklist_cache (id, title, updated_at)
             VALUES (?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                title = excluded.title,
-                updated_at = excluded.updated_at
             """,
-            (id, title, _now()),
+            rows,
         )
+
+
+def delete_tasklist_cached(id: str) -> None:
+    init_db()
+    with _connect() as conn:
+        conn.execute("DELETE FROM tasklist_cache WHERE id = ?", (id,))
+
+
+def clear_tasklist_cache() -> None:
+    init_db()
+    with _connect() as conn:
+        conn.execute("DELETE FROM tasklist_cache")
