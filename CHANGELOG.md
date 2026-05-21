@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Added account-scoped Google OAuth token and tasklist-title cache storage while preserving legacy `MCP_BEARER_TOKEN` behavior for account `default`.
 - Persisted MCP OAuth refresh tokens so OAuth-capable MCP clients can refresh access tokens across server restarts.
 - Added standard MCP tool titles, descriptions, and safety annotations for better tool discoverability in clients that display metadata.
+- Reworked the README as a clearer setup and usage front door while linking deeper hosting and distribution details to focused docs.
 
 ### Fixed
 - OAuth gateway `/mcp` probe requests without bearer auth now return 401 with OAuth discovery metadata instead of reaching MCP tool handling.
