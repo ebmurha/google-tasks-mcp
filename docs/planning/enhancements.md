@@ -1,5 +1,0 @@
-- implement multi-user bearer token approach: so we support several accounts
-- docs/open-issues/mcp-auth-reauthorize-loop.md
-- docs/open-issues/mcp-bug-default-tasklist.md - go for option A.
-- tooling grouping or something (i don't know the technical terms). right now, in LLM clients, all my tools are categorized as "Other tools". There should be a best practice. we have many tools. worth grouping them. Don't add any more unnecessary tools. Just make it easy to get to them, and ensure they are working sound.
-- update read-me to read super and more user friendly. refer to docs/samples/slack-mcp-readme.md as an example only. See how clear and succinct it is. I understand it in one sitting. This tool is waay bigger than google tasks yet it's super simple here. If there are things from read-me that should rather be in a documentation or help file, then that is ideal. We already have the MCP_SERVER_GUIDE.md after all.
