@@ -3,7 +3,6 @@ FROM python:3.12-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     BIND_HOST=0.0.0.0 \
-    BIND_PORT=8787 \
     DB_PATH=/var/lib/google-tasks-mcp/google-tasks.db
 
 WORKDIR /app
@@ -24,6 +23,6 @@ USER google-tasks
 EXPOSE 8787
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import json, urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8787/healthz')) == {'ok': True}"
+    CMD python -c "import json, os, urllib.request; port=os.getenv('PORT', '8787'); assert json.load(urllib.request.urlopen(f'http://127.0.0.1:{port}/healthz')) == {'ok': True}"
 
 CMD ["python", "-m", "google_tasks_mcp", "--transport", "http"]

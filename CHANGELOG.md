@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- HTTP startup can seed the default Google account's refresh token from `GOOGLE_REFRESH_TOKEN`, allowing deployments with disposable SQLite files to rebuild OAuth state from a host-managed secret.
+
 ## [0.4.0] - 2026-05-21
 
 ### Added

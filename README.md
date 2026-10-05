@@ -25,6 +25,15 @@ This project is for self-hosted use. You provide your own Google Cloud OAuth cre
 
 For deeper hosting and distribution guidance, see [MCP_SERVER_GUIDE.md](./MCP_SERVER_GUIDE.md) and [DISTRIBUTION.md](./DISTRIBUTION.md).
 
+### Ephemeral container deployments
+
+For a single-account HTTP deployment whose filesystem is recreated on startup,
+set `GOOGLE_REFRESH_TOKEN` as a secret environment variable alongside the
+Google OAuth client settings. HTTP startup writes that token into the configured
+SQLite database before accepting requests. Keep it in the hosting provider's
+secret store; do not put it in a start command or Docker build argument. Hosts
+that provide `PORT` can use it when `BIND_PORT` is unset.
+
 ## Install
 
 ```bash

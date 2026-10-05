@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 
 from .config import get_settings
+from .auth import set_refresh_token
 from .db import init_db
 from .errors import ConfigError
 
@@ -30,6 +32,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         settings = get_settings(require_bearer_token=False)
         init_db()
+        if args.transport == "http" and not args.check:
+            refresh_token = os.getenv("GOOGLE_REFRESH_TOKEN", "").strip()
+            if refresh_token:
+                set_refresh_token(refresh_token)
     except ConfigError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         return 2
