@@ -1,0 +1,3 @@
+# Files/globs to skip in this repo only - one per line, # for
+# comments. Machine-wide exemptions go in ~/.secauditignore
+# instead (secaudit init --global).
