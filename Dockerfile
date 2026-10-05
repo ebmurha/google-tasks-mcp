@@ -9,6 +9,8 @@ WORKDIR /app
 
 RUN addgroup --system google-tasks \
     && adduser --system --ingroup google-tasks --home /app google-tasks \
+    && addgroup --system --gid 1000 runtime-secrets \
+    && adduser google-tasks runtime-secrets \
     && mkdir -p /var/lib/google-tasks-mcp \
     && chown -R google-tasks:google-tasks /app /var/lib/google-tasks-mcp
 
