@@ -1,210 +1,3 @@
-# Project secrets and local config
-.env
-.env.*
-!.env.example
-.envrc
-gcp-oauth.keys.json
-docker-compose.override.yml
-compose.override.yml
-
-# Project local data and generated bundles
-gitleaks-report.json
-*.db
-*.sqlite
-*.sqlite3
-*.mcpb
-*.tar
-*.tar.gz
-*.tgz
-.docker-data/
-docker-data/
-data/
-secrets/
-*.secret
-*.secrets
-docs/
-temp/
-
-# AI / LLM coding agent local files
-.cursor/
-.cursorignore
-.cursorrules
-.claude/
-claude.md
-CLAUDE.md
-.github/copilot-instructions.md
-.codex/
-AGENTS.md
-agents.md
-.aider*
-.aider/
-.continue/
-.continueignore
-.windsurf/
-.windsurfrules
-.tabnine/
-
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
-*$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# PyInstaller
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-.pytest_cache/
-cover/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff
-instance/
-.webassets-cache
-
-# Scrapy stuff
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# Python environment managers
-.pdm-python
-.pdm-build/
-.pixi
-__pypackages__/
-
-# Environments
-.venv/
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# Redis
-*.rdb
-*.aof
-*.pid
-
-# RabbitMQ
-mnesia/
-rabbitmq/
-rabbitmq-data/
-
-# ActiveMQ
-activemq-data/
-
-# SageMath parsed files
-*.sage.py
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# Abstra local state
-.abstra/
-
-# Visual Studio Code temporary file for partial code execution
-tempCodeRunnerFile.py
-
-# Ruff
-.ruff_cache/
-
-# PyPI configuration file
-.pypirc
-
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
-
-# Streamlit
-.streamlit/secrets.toml
-
 # --- secaudit recommended ---
 # Single source: `secaudit init` writes this block. Do not hand-maintain a copy.
 #
@@ -212,6 +5,9 @@ __marimo__/
 # Or as a repo .gitignore.
 
 # --- Secrets and credentials ---
+.env
+.env.*
+!.env.example
 !.env.template
 !.env.sample
 
@@ -234,6 +30,7 @@ gha-creds-*.json
 
 .netrc
 .npmrc
+.pypirc
 .htpasswd
 
 # Cloud and provider CLI state - these hold live tokens
@@ -255,8 +52,14 @@ terraform.tfvars
 # --- AI assistant and agent sessions ---
 # These record whatever the tool read while working, including credentials
 # from your config files, plus hidden text that can be decoded back to English.
+.claude/
+.codex/
 .hermes/
 .openclaw/
+.cursor/
+.aider*
+.continue/
+.windsurf/
 
 sessions/
 session/
@@ -279,6 +82,7 @@ mcp-config.local.json
 # --- Logs (payloads and tokens leak here) ---
 logs/
 log/
+*.log
 *.log.*
 npm-debug.log*
 yarn-debug.log*
@@ -296,6 +100,8 @@ backups/
 *.sql.gz
 *.dump
 *.bak
+*.sqlite
+*.sqlite3
 dump.rdb
 # Schema migrations are .sql but belong in git. Same naming conventions the
 # SEC-204 rule uses: a version prefix, or a golang-migrate direction suffix.
@@ -311,6 +117,7 @@ dump.rdb
 
 # --- Scanner output: contains the findings, and fragments of your secrets ---
 secaudit-report.*
+gitleaks-report.json
 trufflehog-report.json
 .secrets.baseline
 reports/
@@ -318,11 +125,21 @@ reports/
 
 # --- Language and framework ---
 # Python
+__pycache__/
 *.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .ipynb_checkpoints/
 
 # Node
 node_modules/
+dist/
+build/
 .next/
 .nuxt/
 .svelte-kit/
@@ -337,6 +154,7 @@ filestore/
 .odoo/
 
 # Docker - compose overrides often hold real values
+docker-compose.override.yml
 docker-compose.*.local.yml
 
 # --- OS and editor ---
@@ -353,6 +171,7 @@ desktop.ini
 
 # --- Local scratch ---
 tmp/
+temp/
 scratch/
 *.local
 *.local.*
