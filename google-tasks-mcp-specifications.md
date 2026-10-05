@@ -90,9 +90,37 @@ Logs, tests, docs, and MCP responses must not print raw bearer tokens except for
 
 ## MCP OAuth Gateway Rules
 
-When OAuth gateway mode is enabled, unauthenticated `/mcp` requests must return 401 and include a `WWW-Authenticate` header that points clients at the OAuth authorization metadata endpoint. Unauthenticated probe requests must not reach MCP tool, resource, or prompt handling.
+When OAuth gateway mode is enabled, unauthenticated `/mcp` requests must return
+401 and include a `WWW-Authenticate` header whose `resource_metadata` value
+points to RFC 9728 protected-resource metadata. That metadata identifies the
+canonical MCP resource, its authorization server, and its supported scopes.
+Unauthenticated probe requests must not reach MCP tool, resource, or prompt
+handling.
 
-MCP OAuth access tokens are signed and self-verifying. MCP OAuth refresh tokens are opaque, rotated on use, revocable, and persisted by hash so they survive server restarts without storing raw token values.
+The authorization server must publish RFC 8414 metadata, support authorization
+code with PKCE `S256`, and preserve the OAuth `resource` parameter through
+authorization and token exchange. Issued access tokens must be scoped to the
+requested MCP resource, and token validation must reject an incorrect resource
+or audience. MCP tools that require authentication must advertise an OAuth
+security scheme in their MCP descriptors.
+
+When the server advertises RFC 9207 authorization-response issuer support, it
+must include the exact issuer identifier in every successful and error
+authorization response. This permits clients to use a stable callback only
+after issuer validation is actually implemented; metadata must not claim this
+capability prematurely.
+
+Dynamic Client Registration may be enabled for MCP clients that require it.
+Registered client metadata and a one-way hash of each client secret must survive
+server restarts; raw client secrets must be returned only at registration and
+must not be stored. Authorization codes may remain short-lived process state.
+
+MCP OAuth access tokens are signed and self-verifying. MCP OAuth refresh tokens
+are opaque, rotated on use, revocable, and persisted by hash so they survive
+server restarts without storing raw token values. Deployments that enable the
+OAuth gateway must provide durable storage for registered clients and refresh
+token hashes. The legacy static bearer-token path remains valid for trusted MCP
+clients that can supply a fixed Authorization header.
 
 ## Tasklist Cache Rules
 
