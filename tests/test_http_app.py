@@ -11,9 +11,8 @@ from starlette.testclient import TestClient
 
 from google_tasks_mcp import db
 from google_tasks_mcp.account import get_current_account_id
-from google_tasks_mcp.config import get_settings, reset_settings_cache
+from google_tasks_mcp.config import reset_settings_cache
 from google_tasks_mcp.http_app import BearerAuthMiddleware, create_app, create_protected_app
-from mcp_oauth_gateway.config import well_known_url
 
 
 async def _account_endpoint(_request):
@@ -92,7 +91,7 @@ def test_bearer_middleware_routes_legacy_env_token_to_default(configured_env):
 
 
 def test_oauth_gateway_accepts_legacy_bearer_token(configured_env, monkeypatch):
-    monkeypatch.setenv("EXTERNAL_BASE_URL", "https://tasks.example.com")
+    monkeypatch.setenv("MCP_OAUTH_ISSUER", "https://tasks.example.com")
     monkeypatch.setenv("MCP_OAUTH_CLIENT_ID", "mcp-client")
     monkeypatch.setenv("MCP_OAUTH_CLIENT_SECRET", "mcp-client-secret")
     monkeypatch.setenv("MCP_OAUTH_SIGNING_SECRET", "x" * 64)
@@ -122,7 +121,7 @@ def test_oauth_gateway_accepts_legacy_bearer_token(configured_env, monkeypatch):
 
 
 def test_oauth_gateway_mcp_probe_requires_auth_and_advertises_metadata(configured_env, monkeypatch):
-    monkeypatch.setenv("EXTERNAL_BASE_URL", "https://tasks.example.com")
+    monkeypatch.setenv("MCP_OAUTH_ISSUER", "https://tasks.example.com")
     monkeypatch.setenv("MCP_OAUTH_CLIENT_ID", "mcp-client")
     monkeypatch.setenv("MCP_OAUTH_CLIENT_SECRET", "mcp-client-secret")
     monkeypatch.setenv("MCP_OAUTH_SIGNING_SECRET", "x" * 64)
@@ -146,7 +145,7 @@ def test_oauth_gateway_mcp_probe_requires_auth_and_advertises_metadata(configure
 
 
 def test_oauth_refresh_token_survives_app_restart(configured_env, monkeypatch):
-    monkeypatch.setenv("EXTERNAL_BASE_URL", "https://tasks.example.com")
+    monkeypatch.setenv("MCP_OAUTH_ISSUER", "https://tasks.example.com")
     monkeypatch.setenv("MCP_OAUTH_CLIENT_ID", "mcp-client")
     monkeypatch.setenv("MCP_OAUTH_CLIENT_SECRET", "mcp-client-secret")
     monkeypatch.setenv("MCP_OAUTH_SIGNING_SECRET", "x" * 64)
@@ -218,7 +217,7 @@ def test_oauth_refresh_token_survives_app_restart(configured_env, monkeypatch):
 
 
 def test_oauth_gateway_serves_discovery_and_support_routes(configured_env, monkeypatch):
-    monkeypatch.setenv("EXTERNAL_BASE_URL", "https://tasks.example.com")
+    monkeypatch.setenv("MCP_OAUTH_ISSUER", "https://tasks.example.com")
     monkeypatch.setenv("MCP_OAUTH_CLIENT_ID", "mcp-client")
     monkeypatch.setenv("MCP_OAUTH_CLIENT_SECRET", "mcp-client-secret")
     monkeypatch.setenv("MCP_OAUTH_SIGNING_SECRET", "x" * 64)
@@ -236,45 +235,3 @@ def test_oauth_gateway_serves_discovery_and_support_routes(configured_env, monke
     assert healthz.json() == {"ok": True}
     assert callback.status_code == 200
     assert "&lt;abc&gt;" in callback.text
-
-
-def test_one_external_base_url_moves_all_public_oauth_urls(configured_env, monkeypatch):
-    monkeypatch.setenv("MCP_OAUTH_CLIENT_ID", "mcp-client")
-    monkeypatch.setenv("MCP_OAUTH_CLIENT_SECRET", "mcp-client-secret")
-    monkeypatch.setenv("MCP_OAUTH_SIGNING_SECRET", "x" * 64)
-    monkeypatch.setenv("MCP_OAUTH_ENABLE_DCR", "true")
-    previous_base = None
-
-    for base in (
-        "https://google-tasks.example",
-        "https://services.example/team/google-tasks",
-    ):
-        monkeypatch.setenv("EXTERNAL_BASE_URL", base)
-        reset_settings_cache()
-
-        with TestClient(create_app()) as client:
-            authorization = client.get(
-                f"/.well-known/oauth-authorization-server{urlparse(base).path}"
-            ).json()
-            protected = client.get(
-                f"/.well-known/oauth-protected-resource{urlparse(base).path}/mcp"
-            ).json()
-            challenge = client.post("/mcp")
-
-        expected_resource = f"{base}/mcp"
-        assert get_settings().google_redirect_uri == f"{base}/callback"
-        assert authorization["issuer"] == base
-        assert authorization["authorization_endpoint"] == f"{base}/authorize"
-        assert authorization["token_endpoint"] == f"{base}/token"
-        assert authorization["registration_endpoint"] == f"{base}/register"
-        assert authorization["revocation_endpoint"] == f"{base}/revoke"
-        assert protected["resource"] == expected_resource
-        assert protected["authorization_servers"] == [base]
-        assert (
-            f'resource_metadata="{well_known_url(expected_resource, "oauth-protected-resource")}"'
-            in challenge.headers["www-authenticate"]
-        )
-        if previous_base:
-            emitted = repr((authorization, protected, challenge.headers["www-authenticate"]))
-            assert previous_base not in emitted
-        previous_base = base

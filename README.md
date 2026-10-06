@@ -187,10 +187,8 @@ Bearer-token mode is the default HTTP mode. `/mcp` requires `Authorization: Bear
 
 OAuth 2.0 gateway mode is optional. Enable it when your HTTP MCP client supports OAuth authorization metadata and token refresh.
 
-- Set `EXTERNAL_BASE_URL` to the server's one canonical public HTTPS URL. It
-  may be an origin such as `https://tasks.example.com` or include a nested base
-  path such as `https://services.example.com/team/tasks`.
-- Set `MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET`, and `MCP_OAUTH_SIGNING_SECRET`.
+- Set `MCP_OAUTH_ISSUER`, `MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET`, and `MCP_OAUTH_SIGNING_SECRET`.
+- Set `MCP_OAUTH_RESOURCE` to the canonical public MCP URL, or let it default to `<issuer>/mcp`.
 - Set `MCP_OAUTH_REDIRECT_URIS` to the callback URI values accepted by your MCP client.
 - Set `MCP_OAUTH_ENABLE_DCR=true` for clients that use Dynamic Client Registration.
 - The gateway publishes protected-resource and authorization-server metadata,
@@ -199,10 +197,6 @@ OAuth 2.0 gateway mode is optional. Enable it when your HTTP MCP client supports
 - `/mcp` accepts OAuth-issued access tokens and the legacy bearer token.
 - OAuth client secrets and refresh tokens are stored only by hash. Registered
   clients and rotating refresh tokens survive restarts when `DB_PATH` is durable.
-- The server derives `<base>/callback`, `<base>/mcp`, OAuth issuer/resource
-  identifiers, endpoint URLs, discovery URLs, redirects, and challenges from
-  `EXTERNAL_BASE_URL`. Change that one setting and the proxy route to move an
-  existing image; no source edit or rebuild is required.
 
 Leave `MCP_OAUTH_REDIRECT_URIS` empty to keep OAuth gateway mode disabled.
 
@@ -262,8 +256,7 @@ Google OAuth app is in Testing mode:
 
 Callback URI mismatch:
 
-- For public HTTP deployments, `<EXTERNAL_BASE_URL>/callback` must exactly
-  match an Authorized redirect URI in Google Cloud.
+- `GOOGLE_REDIRECT_URI` must exactly match an Authorized redirect URI in Google Cloud.
 - For local web OAuth, use `http://127.0.0.1:8787/callback` consistently.
 
 Expired or revoked Google refresh token:
@@ -275,8 +268,8 @@ OAuth MCP client keeps re-authorizing:
 
 - Ensure the server is running a version with persisted MCP OAuth refresh tokens.
 - Check that `DB_PATH` points to persistent storage and survives restarts.
-- Verify `EXTERNAL_BASE_URL` is the canonical public HTTPS base URL. The server
-  derives the MCP resource as `<EXTERNAL_BASE_URL>/mcp`.
+- Verify `MCP_OAUTH_ISSUER` is the public HTTPS base URL with no trailing slash.
+- Verify `MCP_OAUTH_RESOURCE` matches the public `/mcp` URL exactly.
 - On disposable hosts, verify Litestream restored the SQLite replica before startup.
 
 ## More Docs

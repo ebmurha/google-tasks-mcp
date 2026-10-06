@@ -18,45 +18,6 @@ def test_settings_loads_from_env(configured_env):
     assert settings.db_path == configured_env / "test.db"
 
 
-@pytest.mark.parametrize(
-    ("external_base_url", "expected"),
-    [
-        ("https://tasks.example.net", "https://tasks.example.net"),
-        (
-            "https://tasks.example.net/team/mcp-server/",
-            "https://tasks.example.net/team/mcp-server",
-        ),
-    ],
-)
-def test_external_base_url_derives_google_callback(
-    configured_env, monkeypatch, external_base_url, expected
-):
-    monkeypatch.setenv("EXTERNAL_BASE_URL", external_base_url)
-    monkeypatch.setenv("GOOGLE_REDIRECT_URI", "https://stale.example/callback")
-    reset_settings_cache()
-
-    settings = get_settings()
-
-    assert settings.external_base_url == expected
-    assert settings.google_redirect_uri == f"{expected}/callback"
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        "http://tasks.example.net",
-        "https://tasks.example.net:8443",
-        "https://tasks.example.net/base?mode=test",
-    ],
-)
-def test_external_base_url_rejects_noncanonical_values(configured_env, monkeypatch, value):
-    monkeypatch.setenv("EXTERNAL_BASE_URL", value)
-    reset_settings_cache()
-
-    with pytest.raises(ConfigError, match="EXTERNAL_BASE_URL"):
-        get_settings()
-
-
 def test_oauth_json_used_when_env_credentials_missing(monkeypatch, tmp_path):
     key_file = tmp_path / "gcp-oauth.keys.json"
     key_file.write_text(
