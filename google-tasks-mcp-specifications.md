@@ -92,6 +92,10 @@ explicitly and must not be derived from the MCP OAuth issuer, MCP resource,
 provider hostname, or deployment path. The displayed onboarding URL must never
 contain the operator setup secret.
 
+When hosted onboarding is enabled, the application registers only the paths of
+the configured onboarding URL and Google callback URI. Default paths are not
+retained as aliases when either configured path differs.
+
 Initiation requires the separately configured operator setup secret submitted
 over HTTPS. A normal MCP client authorization does not grant permission to
 replace the server's Google account authorization. After successful operator

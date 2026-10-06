@@ -30,7 +30,6 @@ from .server import create_mcp_server
 
 LOGGER = logging.getLogger(__name__)
 GOOGLE_OAUTH_STATE_TTL_SECONDS = 600
-GOOGLE_OAUTH_ONBOARDING_PATH = "/google/oauth"
 
 
 def _hosted_google_oauth_enabled(settings: Settings) -> bool:
@@ -231,21 +230,23 @@ def _build_starlette_app() -> Starlette:
     mcp_route = next(route for route in mcp_app.routes if getattr(route, "path", None) == "/mcp")
     routes = [
         Route("/healthz", healthz, methods=["GET"]),
-        Route(GOOGLE_OAUTH_ONBOARDING_PATH, google_oauth_onboarding, methods=["GET", "POST"]),
-        Route("/callback", callback, methods=["GET"]),
         Route("/mcp", endpoint=mcp_route.endpoint),
     ]
-    if settings is not None and settings.google_oauth_onboarding_url:
-        public_onboarding_path = urlsplit(settings.google_oauth_onboarding_url).path
-        if public_onboarding_path and public_onboarding_path != GOOGLE_OAUTH_ONBOARDING_PATH:
-            routes.insert(
-                2,
-                Route(public_onboarding_path, google_oauth_onboarding, methods=["GET", "POST"]),
-            )
-    if settings is not None:
+    if settings is not None and _hosted_google_oauth_enabled(settings):
+        public_onboarding_path = urlsplit(
+            settings.google_oauth_onboarding_url or ""
+        ).path
         public_callback_path = urlsplit(settings.google_redirect_uri).path
-        if public_callback_path and public_callback_path != "/callback":
-            routes.insert(3, Route(public_callback_path, callback, methods=["GET"]))
+        routes[1:1] = [
+            Route(
+                public_onboarding_path,
+                google_oauth_onboarding,
+                methods=["GET", "POST"],
+            ),
+            Route(public_callback_path, callback, methods=["GET"]),
+        ]
+    else:
+        routes.insert(1, Route("/callback", callback, methods=["GET"]))
     return Starlette(
         routes=routes,
         middleware=[],

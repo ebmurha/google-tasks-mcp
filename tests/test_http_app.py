@@ -23,10 +23,17 @@ async def _account_endpoint(_request):
     return JSONResponse({"account_id": get_current_account_id()})
 
 
-def _enable_hosted_google_oauth(monkeypatch, *, path: str = "/google/oauth") -> None:
-    monkeypatch.setenv("GOOGLE_OAUTH_ONBOARDING_URL", f"https://testserver{path}")
+def _enable_hosted_google_oauth(
+    monkeypatch,
+    *,
+    onboarding_path: str = "/google/oauth",
+    callback_path: str = "/callback",
+) -> None:
+    monkeypatch.setenv(
+        "GOOGLE_OAUTH_ONBOARDING_URL", f"https://testserver{onboarding_path}"
+    )
     monkeypatch.setenv("GOOGLE_OAUTH_SETUP_SECRET", "operator-secret")
-    monkeypatch.setenv("GOOGLE_REDIRECT_URI", "http://testserver/callback")
+    monkeypatch.setenv("GOOGLE_REDIRECT_URI", f"http://testserver{callback_path}")
     reset_settings_cache()
 
 
@@ -51,7 +58,7 @@ def test_callback_is_unauthenticated_and_escapes_code():
 def test_hosted_google_oauth_page_has_no_secret_and_supports_configured_path(
     configured_env, monkeypatch
 ):
-    _enable_hosted_google_oauth(monkeypatch, path="/team/setup/google")
+    _enable_hosted_google_oauth(monkeypatch, onboarding_path="/team/setup/google")
 
     with TestClient(create_protected_app()) as client:
         response = client.get("/team/setup/google")
@@ -64,6 +71,39 @@ def test_hosted_google_oauth_page_has_no_secret_and_supports_configured_path(
         "form-action https://testserver/team/setup/google"
         in response.headers["content-security-policy"]
     )
+
+
+def test_custom_hosted_paths_replace_default_routes(configured_env, monkeypatch):
+    _enable_hosted_google_oauth(
+        monkeypatch,
+        onboarding_path="/team/setup/google",
+        callback_path="/team/google/callback",
+    )
+    db.save_google_oauth_state(
+        "custom-state",
+        account_id="default",
+        callback_uri="http://testserver/team/google/callback",
+        expires_at=int(time.time()) + 60,
+    )
+
+    with patch("google_tasks_mcp.http_app.exchange_code") as exchange, TestClient(
+        create_protected_app()
+    ) as client:
+        default_onboarding = client.post(
+            "/google/oauth", data={"secret": "operator-secret"}
+        )
+        default_callback = client.get(
+            "/callback?state=custom-state&code=synthetic-code"
+        )
+        configured_callback = client.get(
+            "/team/google/callback?state=custom-state&error=access_denied"
+        )
+
+    assert default_onboarding.status_code == 404
+    assert default_callback.status_code == 404
+    exchange.assert_not_called()
+    assert configured_callback.status_code == 400
+    assert "was denied" in configured_callback.text
 
 
 def test_hosted_google_oauth_requires_operator_secret(configured_env, monkeypatch):

@@ -110,7 +110,8 @@ GOOGLE_OAUTH_SETUP_SECRET=generate-a-long-random-operator-password
 Route both public URLs to this application. The onboarding URL may use any
 hostname or path supported by your proxy; it is not derived from the MCP OAuth
 issuer or resource. The displayed onboarding link never contains the setup
-secret.
+secret. The application accepts hosted onboarding and callback requests only
+on these configured paths.
 
 Open `GOOGLE_OAUTH_ONBOARDING_URL`, enter the operator setup password, continue
 to Google, and approve access. The server validates durable single-use state,
