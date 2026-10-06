@@ -2,12 +2,22 @@
 from dataclasses import dataclass, field
 from typing import Any, Callable, List, Optional
 import secrets
+from urllib.parse import urlsplit, urlunsplit
+
+
+def well_known_url(identifier: str, suffix: str) -> str:
+    """Build an RFC 8414/9728 metadata URL for an identifier with an optional path."""
+    parsed = urlsplit(identifier)
+    identifier_path = parsed.path.rstrip("/")
+    path = f"/.well-known/{suffix}{identifier_path}"
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
 
 
 @dataclass
 class GatewayConfig:
     # OAuth server identity
     issuer: str                          # e.g. "https://tasks.example.com"
+    resource: str                        # canonical MCP resource URL
 
     # Pre-registered client for Claude.ai web
     client_id: str                       # e.g. "claude-connector"
@@ -51,6 +61,7 @@ class GatewayConfig:
 
     def validate(self):
         assert self.issuer.startswith("https://"), "issuer must be https"
+        assert self.resource.startswith("https://"), "resource must be https"
         assert self.client_id, "client_id required"
         assert self.client_secret, "client_secret required"
         assert len(self.signing_secret) >= 32, "signing_secret must be >= 32 chars"

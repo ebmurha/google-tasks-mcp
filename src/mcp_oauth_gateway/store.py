@@ -48,10 +48,25 @@ class RefreshTokenBackend(Protocol):
     def purge_expired(self) -> None: ...
 
 
+class ClientBackend(Protocol):
+    def save(self, client_id: str, client_secret: str, metadata: Dict[str, Any]) -> None: ...
+    def get(self, client_id: str) -> Optional[Dict[str, Any]]: ...
+    def authenticate(self, client_id: str, client_secret: str) -> bool: ...
+
+
 class TokenStore:
-    def __init__(self, signing_secret: str, refresh_backend: RefreshTokenBackend | None = None):
+    def __init__(
+        self,
+        signing_secret: str,
+        *,
+        issuer: str = "",
+        refresh_backend: RefreshTokenBackend | None = None,
+        client_backend: ClientBackend | None = None,
+    ):
         self._secret = signing_secret
+        self._issuer = issuer
         self._refresh_backend = refresh_backend
+        self._client_backend = client_backend
         # code -> {client_id, redirect_uri, code_challenge, expires_at}
         self._codes: Dict[str, Dict[str, Any]] = {}
         # refresh_token -> {client_id, issued_at, expires_at}
@@ -60,12 +75,13 @@ class TokenStore:
     # ---- Auth codes --------------------------------------------------------
 
     def issue_code(self, client_id: str, redirect_uri: str,
-                   code_challenge: Optional[str], ttl: int) -> str:
+                   code_challenge: Optional[str], resource: str, ttl: int) -> str:
         code = secrets.token_urlsafe(32)
         self._codes[code] = {
             "client_id": client_id,
             "redirect_uri": redirect_uri,
             "code_challenge": code_challenge,
+            "resource": resource,
             "expires_at": time.time() + ttl,
         }
         return code
@@ -79,9 +95,11 @@ class TokenStore:
 
     # ---- Access tokens (signed JWTs) ---------------------------------------
 
-    def issue_access_token(self, client_id: str, ttl: int) -> str:
+    def issue_access_token(self, client_id: str, resource: str, ttl: int) -> str:
         payload = {
             "sub": client_id,
+            "iss": self._issuer,
+            "aud": resource,
             "iat": int(time.time()),
             "exp": int(time.time()) + ttl,
             "jti": secrets.token_hex(8),
@@ -93,10 +111,11 @@ class TokenStore:
 
     # ---- Refresh tokens (opaque) -------------------------------------------
 
-    def issue_refresh_token(self, client_id: str, ttl: int) -> str:
+    def issue_refresh_token(self, client_id: str, resource: str, ttl: int) -> str:
         token = secrets.token_urlsafe(48)
         record = {
             "client_id": client_id,
+            "resource": resource,
             "expires_at": time.time() + ttl,
         }
         if self._refresh_backend is not None:
@@ -130,13 +149,29 @@ class TokenStore:
         self.__init_dcr()
         client_id = "dcr_" + secrets.token_hex(12)
         client_secret = secrets.token_urlsafe(32)
-        record = {**metadata, "client_id": client_id, "client_secret": client_secret}
-        self._dcr_clients[client_id] = record
-        return record
+        clean_metadata = {
+            key: value
+            for key, value in metadata.items()
+            if key not in {"client_id", "client_secret", "client_id_issued_at", "client_secret_expires_at"}
+        }
+        record = {**clean_metadata, "client_id": client_id}
+        if self._client_backend is not None:
+            self._client_backend.save(client_id, client_secret, record)
+        else:
+            self._dcr_clients[client_id] = {**record, "client_secret": client_secret}
+        return {**record, "client_secret": client_secret}
 
     def get_dcr_client(self, client_id: str) -> Optional[dict]:
         self.__init_dcr()
+        if self._client_backend is not None:
+            return self._client_backend.get(client_id)
         return self._dcr_clients.get(client_id)
+
+    def authenticate_dcr_client(self, client_id: str, client_secret: str) -> bool:
+        if self._client_backend is not None:
+            return self._client_backend.authenticate(client_id, client_secret)
+        rec = self.get_dcr_client(client_id)
+        return bool(rec and hmac.compare_digest(client_secret, rec.get("client_secret", "")))
 
     # ---- Cleanup -----------------------------------------------------------
 

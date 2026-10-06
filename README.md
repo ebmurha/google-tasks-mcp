@@ -25,14 +25,20 @@ This project is for self-hosted use. You provide your own Google Cloud OAuth cre
 
 For deeper hosting and distribution guidance, see [MCP_SERVER_GUIDE.md](./MCP_SERVER_GUIDE.md) and [DISTRIBUTION.md](./DISTRIBUTION.md).
 
-### Ephemeral container deployments
+### Container persistence
 
-For a single-account HTTP deployment whose filesystem is recreated on startup,
+For a bearer-only single-account HTTP deployment whose filesystem is recreated on startup,
 set `GOOGLE_REFRESH_TOKEN` as a secret environment variable alongside the
 Google OAuth client settings. HTTP startup writes that token into the configured
 SQLite database before accepting requests. Keep it in the hosting provider's
 secret store; do not put it in a start command or Docker build argument. Hosts
 that provide `PORT` can use it when `BIND_PORT` is unset.
+
+OAuth gateway deployments also persist dynamically registered clients and MCP
+refresh-token hashes. Configure the image's Litestream variables to restore and
+replicate SQLite to an S3-compatible bucket when the host filesystem is
+disposable. The container restores the database before starting the server and
+replicates changes while it runs.
 
 ## Install
 
@@ -182,9 +188,15 @@ Bearer-token mode is the default HTTP mode. `/mcp` requires `Authorization: Bear
 OAuth 2.0 gateway mode is optional. Enable it when your HTTP MCP client supports OAuth authorization metadata and token refresh.
 
 - Set `MCP_OAUTH_ISSUER`, `MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET`, and `MCP_OAUTH_SIGNING_SECRET`.
+- Set `MCP_OAUTH_RESOURCE` to the canonical public MCP URL, or let it default to `<issuer>/mcp`.
 - Set `MCP_OAUTH_REDIRECT_URIS` to the callback URI values accepted by your MCP client.
+- Set `MCP_OAUTH_ENABLE_DCR=true` for clients that use Dynamic Client Registration.
+- The gateway publishes protected-resource and authorization-server metadata,
+  requires PKCE `S256`, binds tokens to the canonical resource, and includes
+  RFC 9207 issuer identification in authorization redirects.
 - `/mcp` accepts OAuth-issued access tokens and the legacy bearer token.
-- OAuth gateway refresh tokens are stored by hash and rotate on use, so clients can reconnect after server restart.
+- OAuth client secrets and refresh tokens are stored only by hash. Registered
+  clients and rotating refresh tokens survive restarts when `DB_PATH` is durable.
 
 Leave `MCP_OAUTH_REDIRECT_URIS` empty to keep OAuth gateway mode disabled.
 
@@ -257,6 +269,8 @@ OAuth MCP client keeps re-authorizing:
 - Ensure the server is running a version with persisted MCP OAuth refresh tokens.
 - Check that `DB_PATH` points to persistent storage and survives restarts.
 - Verify `MCP_OAUTH_ISSUER` is the public HTTPS base URL with no trailing slash.
+- Verify `MCP_OAUTH_RESOURCE` matches the public `/mcp` URL exactly.
+- On disposable hosts, verify Litestream restored the SQLite replica before startup.
 
 ## More Docs
 

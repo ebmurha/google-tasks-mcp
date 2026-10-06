@@ -30,6 +30,7 @@ CLIENT_SECRET = "test-secret-abc123"
 SIGNING_SECRET = secrets.token_hex(32)
 ISSUER        = "https://tasks.example.com"
 REDIRECT_URI  = "https://claude.ai/api/mcp/auth_callback"
+RESOURCE      = "https://tasks.example.com/mcp"
 
 
 def _pkce_pair():
@@ -50,6 +51,7 @@ def app():
     wrapped = add_mcp_oauth_gateway(
         fake_mcp,
         issuer=ISSUER,
+        resource=RESOURCE,
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,
         signing_secret=SIGNING_SECRET,
@@ -80,6 +82,7 @@ def test_authorize_get_shows_consent(app):
         "state": "abc",
         "code_challenge": challenge,
         "code_challenge_method": "S256",
+        "resource": RESOURCE,
     })
     assert r.status_code == 200
     assert "Authorize Claude Connector" in r.text
@@ -96,6 +99,7 @@ def test_full_authorization_code_flow(app):
         "state": "mystate",
         "code_challenge": challenge,
         "code_challenge_method": "S256",
+        "resource": RESOURCE,
     })
     assert r.status_code == 200
 
@@ -106,6 +110,8 @@ def test_full_authorization_code_flow(app):
         "redirect_uri": REDIRECT_URI,
         "state": "mystate",
         "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "resource": RESOURCE,
     }, follow_redirects=False)
     assert r.status_code == 302
     location = r.headers["location"]
@@ -119,6 +125,7 @@ def test_full_authorization_code_flow(app):
             "code": code,
             "redirect_uri": REDIRECT_URI,
             "code_verifier": verifier,
+            "resource": RESOURCE,
         },
         headers=_basic(CLIENT_ID, CLIENT_SECRET),
     )
@@ -154,6 +161,7 @@ def test_refresh_token_flow(app):
         data={
             "grant_type": "refresh_token",
             "refresh_token": tokens["refresh_token"],
+            "resource": RESOURCE,
         },
         headers=_basic(CLIENT_ID, CLIENT_SECRET),
     )

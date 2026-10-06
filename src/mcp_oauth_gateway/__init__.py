@@ -11,6 +11,7 @@ app = your_starlette_or_fastapi_app
 app = add_mcp_oauth_gateway(
     app,
     issuer="https://tasks.example.com",
+    resource="https://tasks.example.com/mcp",
     client_id="claude-connector",
     client_secret="changeme",
     allowed_redirect_uris=[

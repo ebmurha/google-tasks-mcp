@@ -1039,6 +1039,7 @@ def test_registered_mcp_tools_have_exact_names_and_metadata():
         assert tool.annotations is not None
         assert tool.annotations.title == tool.title
         assert tool.annotations.openWorldHint is True
+        assert tool.meta == {"securitySchemes": [{"type": "oauth2", "scopes": ["mcp"]}]}
 
     assert by_name["today"].annotations.readOnlyHint is True
     assert "all tasklists" in by_name["today"].description

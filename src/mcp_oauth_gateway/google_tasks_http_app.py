@@ -49,6 +49,7 @@ def create_app():
     return add_mcp_oauth_gateway(
         raw_mcp_app,
         issuer=issuer,
+        resource=f"{issuer.rstrip('/')}/mcp",
         client_id=client_id,
         client_secret=client_secret,
         signing_secret=signing_secret,
