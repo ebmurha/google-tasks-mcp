@@ -17,6 +17,7 @@ from mcp.types import ToolAnnotations
 
 from . import digest, timezones
 from .errors import AuthRequired, ConfigError, GoogleTasksApiError, GoogleTasksMcpError, InvalidInputError, NotFoundError
+from .config import get_settings
 from . import tasks as tasks_api
 
 
@@ -186,6 +187,13 @@ def _error_payload(exc: Exception) -> dict[str, Any]:
                 **exc.details,
             }
     if isinstance(exc, AuthRequired):
+        onboarding_url = get_settings().google_oauth_onboarding_url
+        if onboarding_url:
+            return {
+                "error": str(exc),
+                "hint": "Connect or reconnect the server's Google account",
+                "onboarding_url": onboarding_url,
+            }
         return {"error": str(exc), "hint": "Run scripts/bootstrap_oauth.py"}
     if isinstance(exc, ConfigError):
         return {"error": str(exc), "hint": "Check server configuration"}

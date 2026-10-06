@@ -65,3 +65,7 @@ class GatewayConfig:
         assert self.client_id, "client_id required"
         assert self.client_secret, "client_secret required"
         assert len(self.signing_secret) >= 32, "signing_secret must be >= 32 chars"
+
+    @property
+    def issuer_path(self) -> str:
+        return urlsplit(self.issuer).path.rstrip("/")

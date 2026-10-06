@@ -38,3 +38,14 @@ def test_authorization_url_can_reuse_existing_flow():
 
     assert authorization_url(flow) == "https://accounts.example/auth"
     assert flow.calls == 1
+
+
+def test_authorization_url_uses_explicit_hosted_state():
+    class FlowStub:
+        def authorization_url(self, **kwargs):
+            assert kwargs["state"] == "hosted-state"
+            return "https://accounts.example/auth?state=hosted-state", "hosted-state"
+
+    assert authorization_url(FlowStub(), state="hosted-state").endswith(
+        "state=hosted-state"
+    )

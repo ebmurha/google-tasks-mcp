@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+import time
 
 from google_tasks_mcp.account import reset_current_account_id, set_current_account_id
 from google_tasks_mcp import db
@@ -29,6 +30,74 @@ def test_update_access_token_does_not_clobber_refresh(configured_env):
     assert token.access_token == "new-access"
     assert token.access_expires_at == 5678
     assert token.scope == "scope"
+
+
+def test_google_oauth_state_is_hashed_bound_and_consumed_once(configured_env):
+    expires_at = int(time.time()) + 60
+    db.save_google_oauth_state(
+        "raw-state",
+        account_id="default",
+        callback_uri="https://tasks.example/callback",
+        expires_at=expires_at,
+    )
+
+    assert db.consume_google_oauth_state(
+        "raw-state", callback_uri="https://wrong.example/callback"
+    ) is None
+    record = db.consume_google_oauth_state(
+        "raw-state", callback_uri="https://tasks.example/callback"
+    )
+    replay = db.consume_google_oauth_state(
+        "raw-state", callback_uri="https://tasks.example/callback"
+    )
+
+    assert record is not None
+    assert record.account_id == "default"
+    assert record.callback_uri == "https://tasks.example/callback"
+    assert record.expires_at == expires_at
+    assert record.consumed_at > 0
+    assert replay is None
+    with db._connect() as conn:
+        row = conn.execute(
+            "SELECT state_hash, consumed_at FROM google_oauth_states"
+        ).fetchone()
+    assert row is not None
+    assert row["state_hash"] != "raw-state"
+    assert row["consumed_at"] is not None
+
+
+def test_google_oauth_state_consumption_is_atomic(configured_env):
+    db.save_google_oauth_state(
+        "concurrent-state",
+        account_id="default",
+        callback_uri="https://tasks.example/callback",
+        expires_at=int(time.time()) + 60,
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                lambda _: db.consume_google_oauth_state(
+                    "concurrent-state", callback_uri="https://tasks.example/callback"
+                ),
+                range(2),
+            )
+        )
+
+    assert sum(result is not None for result in results) == 1
+
+
+def test_expired_google_oauth_state_cannot_be_consumed(configured_env):
+    db.save_google_oauth_state(
+        "expired-state",
+        account_id="default",
+        callback_uri="https://tasks.example/callback",
+        expires_at=int(time.time()) - 1,
+    )
+
+    assert db.consume_google_oauth_state(
+        "expired-state", callback_uri="https://tasks.example/callback"
+    ) is None
 
 
 def test_tasklist_cache_round_trips(configured_env):

@@ -17,6 +17,8 @@ from mcp_oauth_gateway.store import TokenStore
 ISSUER = "https://tasks.example.com/base"
 RESOURCE = f"{ISSUER}/mcp"
 REDIRECT_URI = "https://chatgpt.com/connector_platform_oauth_redirect"
+ISSUER_PATH = urlparse(ISSUER).path
+RESOURCE_PATH = urlparse(RESOURCE).path
 
 
 def _configure(monkeypatch) -> None:
@@ -40,7 +42,7 @@ def _pkce_pair() -> tuple[str, str]:
 
 def _register(client: TestClient, client_name: str = "ChatGPT") -> tuple[str, str]:
     response = client.post(
-        "/register",
+        f"{ISSUER_PATH}/register",
         json={
             "client_name": client_name,
             "redirect_uris": [REDIRECT_URI],
@@ -56,7 +58,7 @@ def _register(client: TestClient, client_name: str = "ChatGPT") -> tuple[str, st
 def _authorize(client: TestClient, client_id: str) -> tuple[str, str]:
     verifier, challenge = _pkce_pair()
     consent = client.get(
-        "/authorize",
+        f"{ISSUER_PATH}/authorize",
         params={
             "response_type": "code",
             "client_id": client_id,
@@ -69,7 +71,7 @@ def _authorize(client: TestClient, client_id: str) -> tuple[str, str]:
     )
     assert consent.status_code == 200
     approval = client.post(
-        "/authorize",
+        f"{ISSUER_PATH}/authorize",
         data={
             "response_type": "code",
             "client_id": client_id,
@@ -94,7 +96,17 @@ def test_metadata_and_challenge_are_resource_consistent(configured_env, monkeypa
     with TestClient(create_app()) as client:
         protected = client.get("/.well-known/oauth-protected-resource/base/mcp")
         authorization = client.get("/.well-known/oauth-authorization-server/base")
-        challenge = client.post("/mcp")
+        challenge = client.post(RESOURCE_PATH)
+        health = client.get(f"{ISSUER_PATH}/healthz")
+        root_authorize = client.get("/authorize")
+        root_mcp = client.post("/mcp")
+        root_health = client.get("/healthz")
+        root_authorization_metadata = client.get(
+            "/.well-known/oauth-authorization-server"
+        )
+        root_resource_metadata = client.get(
+            "/.well-known/oauth-protected-resource"
+        )
 
     assert protected.json() == {
         "resource": RESOURCE,
@@ -107,6 +119,12 @@ def test_metadata_and_challenge_are_resource_consistent(configured_env, monkeypa
     assert metadata["authorization_response_iss_parameter_supported"] is True
     assert metadata["code_challenge_methods_supported"] == ["S256"]
     assert challenge.status_code == 401
+    assert health.status_code == 200
+    assert root_authorize.status_code == 404
+    assert root_mcp.status_code == 404
+    assert root_health.status_code == 404
+    assert root_authorization_metadata.status_code == 404
+    assert root_resource_metadata.status_code == 404
     assert (
         'resource_metadata="https://tasks.example.com/.well-known/'
         'oauth-protected-resource/base/mcp"'
@@ -132,7 +150,7 @@ def test_dcr_client_and_refresh_survive_restart(configured_env, monkeypatch):
     with TestClient(create_app()) as restarted_client:
         code, verifier = _authorize(restarted_client, client_id)
         token = restarted_client.post(
-            "/token",
+            f"{ISSUER_PATH}/token",
             data={
                 "grant_type": "authorization_code",
                 "client_id": client_id,
@@ -148,7 +166,7 @@ def test_dcr_client_and_refresh_survive_restart(configured_env, monkeypatch):
 
     with TestClient(create_app()) as restarted_again:
         refreshed = restarted_again.post(
-            "/token",
+            f"{ISSUER_PATH}/token",
             data={
                 "grant_type": "refresh_token",
                 "client_id": client_id,
@@ -166,7 +184,7 @@ def test_resource_mismatches_are_rejected(configured_env, monkeypatch):
     with TestClient(create_app()) as client:
         code, verifier = _authorize(client, "pre-registered-client")
         wrong_exchange = client.post(
-            "/token",
+            f"{ISSUER_PATH}/token",
             data={
                 "grant_type": "authorization_code",
                 "client_id": "pre-registered-client",
@@ -181,7 +199,7 @@ def test_resource_mismatches_are_rejected(configured_env, monkeypatch):
             "pre-registered-client", "https://other.example/mcp", 3600
         )
         wrong_request = client.post(
-            "/mcp", headers={"Authorization": f"Bearer {wrong_token}"}
+            RESOURCE_PATH, headers={"Authorization": f"Bearer {wrong_token}"}
         )
 
     assert wrong_exchange.status_code == 400
@@ -194,7 +212,7 @@ def test_authorization_error_redirect_includes_exact_issuer(configured_env, monk
     _, challenge = _pkce_pair()
     with TestClient(create_app()) as client:
         response = client.get(
-            "/authorize",
+            f"{ISSUER_PATH}/authorize",
             params={
                 "response_type": "token",
                 "client_id": "pre-registered-client",
@@ -251,7 +269,7 @@ def test_consent_html_escapes_oauth_parameters_and_sets_csp(configured_env, monk
 
     with TestClient(create_app()) as client:
         autoapprove = client.get(
-            "/authorize",
+            f"{ISSUER_PATH}/authorize",
             params={
                 "response_type": "code",
                 "client_id": "pre-registered-client",
@@ -267,7 +285,7 @@ def test_consent_html_escapes_oauth_parameters_and_sets_csp(configured_env, monk
     reset_settings_cache()
     with TestClient(create_app()) as client:
         consent = client.get(
-            "/authorize",
+            f"{ISSUER_PATH}/authorize",
             params={
                 "response_type": "code",
                 "client_id": "pre-registered-client",
@@ -279,7 +297,7 @@ def test_consent_html_escapes_oauth_parameters_and_sets_csp(configured_env, monk
             },
         )
         retry = client.post(
-            "/authorize",
+            f"{ISSUER_PATH}/authorize",
             data={
                 "response_type": "code",
                 "client_id": "pre-registered-client",
@@ -307,7 +325,7 @@ def test_consent_uses_safely_escaped_registered_client_name(configured_env, monk
     with TestClient(create_app()) as client:
         client_id, _ = _register(client, malicious_name)
         response = client.get(
-            "/authorize",
+            f"{ISSUER_PATH}/authorize",
             params={
                 "response_type": "code",
                 "client_id": client_id,
@@ -331,7 +349,7 @@ def test_consent_denial_returns_access_denied_and_state(configured_env, monkeypa
 
     with TestClient(create_app()) as client:
         denied = client.post(
-            "/authorize",
+            f"{ISSUER_PATH}/authorize",
             data={
                 "response_type": "code",
                 "client_id": "pre-registered-client",
@@ -397,7 +415,7 @@ def test_invalid_code_bindings_do_not_consume_authorization_code(configured_env,
             "resource": RESOURCE,
         }
         data.update(overrides)
-        return client.post("/token", data=data)
+        return client.post(f"{ISSUER_PATH}/token", data=data)
 
     with TestClient(create_app()) as client:
         other_client_id, other_client_secret = _register(client)
@@ -440,7 +458,7 @@ def test_invalid_refresh_bindings_do_not_consume_refresh_token(configured_env, m
         other_client_id, other_client_secret = _register(client)
         code, verifier = _authorize(client, "pre-registered-client")
         issued = client.post(
-            "/token",
+            f"{ISSUER_PATH}/token",
             data={
                 "grant_type": "authorization_code",
                 "client_id": "pre-registered-client",
@@ -454,7 +472,7 @@ def test_invalid_refresh_bindings_do_not_consume_refresh_token(configured_env, m
         refresh_token = issued.json()["refresh_token"]
 
         wrong_client = client.post(
-            "/token",
+            f"{ISSUER_PATH}/token",
             data={
                 "grant_type": "refresh_token",
                 "client_id": other_client_id,
@@ -466,7 +484,7 @@ def test_invalid_refresh_bindings_do_not_consume_refresh_token(configured_env, m
         assert wrong_client.json()["error"] == "invalid_grant"
 
         legitimate = client.post(
-            "/token",
+            f"{ISSUER_PATH}/token",
             data={
                 "grant_type": "refresh_token",
                 "client_id": "pre-registered-client",
@@ -479,7 +497,7 @@ def test_invalid_refresh_bindings_do_not_consume_refresh_token(configured_env, m
         rotated_token = legitimate.json()["refresh_token"]
 
         wrong_resource = client.post(
-            "/token",
+            f"{ISSUER_PATH}/token",
             data={
                 "grant_type": "refresh_token",
                 "client_id": "pre-registered-client",
@@ -491,7 +509,7 @@ def test_invalid_refresh_bindings_do_not_consume_refresh_token(configured_env, m
         assert wrong_resource.json()["error"] == "invalid_target"
 
         legitimate_again = client.post(
-            "/token",
+            f"{ISSUER_PATH}/token",
             data={
                 "grant_type": "refresh_token",
                 "client_id": "pre-registered-client",

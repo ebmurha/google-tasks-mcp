@@ -10,7 +10,8 @@ import sys
 
 from .config import get_settings
 from .auth import set_refresh_token
-from .db import init_db
+from .account import DEFAULT_ACCOUNT_ID
+from .db import get_token, init_db
 from .errors import ConfigError
 
 
@@ -34,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
         init_db()
         if args.transport == "http" and not args.check:
             refresh_token = os.getenv("GOOGLE_REFRESH_TOKEN", "").strip()
-            if refresh_token:
+            if refresh_token and get_token(DEFAULT_ACCOUNT_ID) is None:
                 set_refresh_token(refresh_token)
     except ConfigError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)

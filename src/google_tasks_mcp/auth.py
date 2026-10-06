@@ -59,23 +59,31 @@ def _extract_code(value: str) -> str:
     return value
 
 
-def _build_flow(settings: Settings | None = None) -> Flow:
+def _build_flow(settings: Settings | None = None, *, state: str | None = None) -> Flow:
     settings = settings or get_settings()
-    flow = Flow.from_client_config(settings.client_config(), scopes=list(SCOPES))
+    flow = Flow.from_client_config(
+        settings.client_config(), scopes=list(SCOPES), state=state
+    )
     flow.redirect_uri = settings.google_redirect_uri
     return flow
 
 
-def build_authorization_flow(settings: Settings | None = None) -> Flow:
-    return _build_flow(settings)
+def build_authorization_flow(
+    settings: Settings | None = None, *, state: str | None = None
+) -> Flow:
+    return _build_flow(settings, state=state)
 
 
-def authorization_url(flow: Flow | None = None) -> str:
+def authorization_url(flow: Flow | None = None, *, state: str | None = None) -> str:
     flow = flow or _build_flow()
+    kwargs: dict[str, str] = {}
+    if state is not None:
+        kwargs["state"] = state
     url, _state = flow.authorization_url(
         access_type="offline",
         prompt="consent",
         include_granted_scopes="true",
+        **kwargs,
     )
     return url
 
@@ -142,7 +150,7 @@ def get_credentials() -> Credentials:
     account_id = get_current_account_id()
     token = db.get_token(account_id)
     if token is None:
-        raise AuthRequired(f"Run bootstrap_oauth.py for account '{account_id}' before using Google Tasks")
+        raise AuthRequired(f"Google account '{account_id}' is not connected")
 
     credentials = Credentials(
         token=token.access_token,
@@ -157,7 +165,7 @@ def get_credentials() -> Credentials:
         try:
             credentials.refresh(Request())
         except (RefreshError, GoogleAuthError) as exc:
-            raise AuthRequired("Google access token refresh failed; run bootstrap_oauth.py") from exc
+            raise AuthRequired("Google authorization expired or was revoked") from exc
         if not credentials.token:
             raise AuthRequired("Google access token refresh returned no token")
         db.update_access_token(credentials.token, _expiry_epoch(credentials), account_id=account_id)

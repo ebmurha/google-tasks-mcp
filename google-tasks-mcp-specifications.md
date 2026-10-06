@@ -75,12 +75,55 @@ Google Cloud OAuth client configuration is not the account selector. `GOOGLE_CLI
 SQLite may persist:
 
 - Google OAuth tokens scoped by `account_id`.
+- Hashed, short-lived Google OAuth onboarding state bound to an account and
+  exact callback URI, including expiry and consumption status.
 - Tasklist `id` / `title` cache rows scoped by `account_id`.
 - Hashed MCP bearer tokens mapped to `account_id`.
 - Hashed MCP OAuth refresh tokens issued by the HTTP OAuth gateway.
 - Legacy single-account compatibility rows used for upgrade/fallback.
 
 SQLite must not persist task content: task titles, notes, due dates, statuses, completion timestamps, parent/sibling links, web links, or derived filtered views.
+
+## Hosted Google OAuth Onboarding
+
+Hosted HTTP deployments may expose a dedicated operator onboarding page for
+the independent server-to-Google OAuth layer. Its public URL is configured
+explicitly and must not be derived from the MCP OAuth issuer, MCP resource,
+provider hostname, or deployment path. The displayed onboarding URL must never
+contain the operator setup secret.
+
+The application registers the exact paths from the explicitly configured
+onboarding URL and Google callback URI and retains no root-path aliases. The MCP
+gateway separately registers the exact runtime paths declared by its issuer and
+resource URLs. A reverse proxy forwards public paths unchanged. Hostnames and
+paths remain runtime configuration; changing them never requires source changes
+or application-specific proxy rewrites.
+
+Initiation requires the separately configured operator setup secret submitted
+over HTTPS. A normal MCP client authorization does not grant permission to
+replace the server's Google account authorization. After successful operator
+authentication, the server generates a high-entropy, short-lived OAuth state
+value and stores only its hash in SQLite with the target `account_id`, exact
+callback URI, expiry, and consumption status. Hosted onboarding state must not
+depend on process memory.
+
+The Google callback remains publicly reachable. It atomically consumes one
+matching unexpired state record before exchanging the authorization code.
+Missing, mismatched, expired, consumed, concurrent, or replayed state cannot
+write credentials. A failed or denied exchange does not restore consumed state
+and does not overwrite an existing Google token; the operator starts a fresh
+flow.
+
+Successful exchange stores the Google refresh and access tokens through the
+existing account-scoped SQLite boundary. No authorization code, access token,
+refresh token, or operator secret is persisted in logs or rendered in a
+response. Raw state appears only where the OAuth protocol requires it in the
+outbound Google authorization URL and return callback; SQLite stores only its
+hash. Hosted HTTP tool failures may return the explicitly configured safe
+onboarding URL. Local and recovery use retains the CLI bootstrap.
+
+`GOOGLE_REFRESH_TOKEN` is an initial default-account seed only. HTTP startup
+must not overwrite an existing SQLite token with the environment value.
 
 ## Bearer Token Rules
 

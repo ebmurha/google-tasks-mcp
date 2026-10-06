@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import re
+import time
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from starlette.applications import Starlette
@@ -12,11 +15,26 @@ from starlette.testclient import TestClient
 from google_tasks_mcp import db
 from google_tasks_mcp.account import get_current_account_id
 from google_tasks_mcp.config import reset_settings_cache
+from google_tasks_mcp.errors import AuthRequired
 from google_tasks_mcp.http_app import BearerAuthMiddleware, create_app, create_protected_app
 
 
 async def _account_endpoint(_request):
     return JSONResponse({"account_id": get_current_account_id()})
+
+
+def _enable_hosted_google_oauth(
+    monkeypatch,
+    *,
+    onboarding_path: str = "/google/oauth",
+    callback_path: str = "/callback",
+) -> None:
+    monkeypatch.setenv(
+        "GOOGLE_OAUTH_ONBOARDING_URL", f"https://testserver{onboarding_path}"
+    )
+    monkeypatch.setenv("GOOGLE_OAUTH_SETUP_SECRET", "operator-secret")
+    monkeypatch.setenv("GOOGLE_REDIRECT_URI", f"http://testserver{callback_path}")
+    reset_settings_cache()
 
 
 def test_healthz_is_unauthenticated():
@@ -35,6 +53,196 @@ def test_callback_is_unauthenticated_and_escapes_code():
 
     assert response.status_code == 200
     assert "&lt;abc&gt;" in response.text
+
+
+def test_hosted_google_oauth_page_has_no_secret_and_uses_configured_path(
+    configured_env, monkeypatch
+):
+    _enable_hosted_google_oauth(monkeypatch, onboarding_path="/team/setup/google")
+
+    with TestClient(create_protected_app()) as client:
+        response = client.get("/team/setup/google")
+        default_path = client.get("/google/oauth")
+
+    assert response.status_code == 200
+    assert "Google is not connected" in response.text
+    assert 'action="https://testserver/team/setup/google"' in response.text
+    assert "operator-secret" not in response.text
+    assert (
+        "form-action https://testserver/team/setup/google"
+        in response.headers["content-security-policy"]
+    )
+    assert default_path.status_code == 404
+
+
+def test_configured_routes_replace_default_paths(
+    configured_env, monkeypatch
+):
+    _enable_hosted_google_oauth(
+        monkeypatch,
+        onboarding_path="/team/setup/google",
+        callback_path="/team/google/callback",
+    )
+    db.save_google_oauth_state(
+        "custom-state",
+        account_id="default",
+        callback_uri="http://testserver/team/google/callback",
+        expires_at=int(time.time()) + 60,
+    )
+
+    with patch("google_tasks_mcp.http_app.exchange_code") as exchange, TestClient(
+        create_protected_app()
+    ) as client:
+        default_onboarding = client.post(
+            "/google/oauth", data={"secret": "operator-secret"}
+        )
+        default_callback = client.get(
+            "/callback?state=custom-state&code=synthetic-code"
+        )
+        configured_callback = client.get(
+            "/team/google/callback?state=custom-state&error=access_denied"
+        )
+
+    assert default_onboarding.status_code == 404
+    assert default_callback.status_code == 404
+    exchange.assert_not_called()
+    assert configured_callback.status_code == 400
+    assert "was denied" in configured_callback.text
+
+
+def test_hosted_google_oauth_requires_operator_secret(configured_env, monkeypatch):
+    _enable_hosted_google_oauth(monkeypatch)
+
+    with TestClient(create_protected_app()) as client:
+        response = client.post("/google/oauth", data={"secret": "wrong"})
+
+    assert response.status_code == 401
+    assert "operator-secret" not in response.text
+    with db._connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM google_oauth_states").fetchone()[0] == 0
+
+
+def test_hosted_google_oauth_stores_only_state_hash(configured_env, monkeypatch):
+    _enable_hosted_google_oauth(monkeypatch)
+
+    def fake_authorization_url(_flow, *, state):
+        return f"https://accounts.example/authorize?state={state}"
+
+    with patch(
+        "google_tasks_mcp.http_app.build_authorization_flow", return_value=object()
+    ), patch(
+        "google_tasks_mcp.http_app.authorization_url",
+        side_effect=fake_authorization_url,
+    ), TestClient(create_protected_app()) as client:
+        response = client.post(
+            "/google/oauth", data={"secret": "operator-secret"}
+        )
+
+    assert response.status_code == 200
+    match = re.search(r"state=([A-Za-z0-9_-]+)", response.text)
+    assert match is not None
+    raw_state = match.group(1)
+    assert "operator-secret" not in response.text
+    with db._connect() as conn:
+        row = conn.execute(
+            "SELECT state_hash, account_id, callback_uri, expires_at, consumed_at "
+            "FROM google_oauth_states"
+        ).fetchone()
+    assert row is not None
+    assert row["state_hash"] != raw_state
+    assert row["account_id"] == "default"
+    assert row["callback_uri"] == "http://testserver/callback"
+    assert row["expires_at"] > int(time.time())
+    assert row["consumed_at"] is None
+
+
+def test_hosted_google_callback_exchanges_stores_and_rejects_replay(
+    configured_env, monkeypatch
+):
+    _enable_hosted_google_oauth(monkeypatch)
+    db.save_google_oauth_state(
+        "valid-state",
+        account_id="default",
+        callback_uri="http://testserver/callback",
+        expires_at=int(time.time()) + 60,
+    )
+
+    def fake_exchange(_code, *, flow, account_id):
+        assert flow is fake_flow
+        assert account_id == "default"
+        db.save_token("hosted-refresh", "hosted-access", 9999999999, "scope")
+
+    fake_flow = object()
+    with patch(
+        "google_tasks_mcp.http_app.build_authorization_flow", return_value=fake_flow
+    ), patch(
+        "google_tasks_mcp.http_app.exchange_code", side_effect=fake_exchange
+    ) as exchange, TestClient(create_protected_app()) as client:
+        response = client.get("/callback?state=valid-state&code=google-code")
+        replay = client.get("/callback?state=valid-state&code=google-code")
+
+    assert response.status_code == 200
+    assert "Google account connected" in response.text
+    assert "google-code" not in response.text
+    assert "hosted-refresh" not in response.text
+    assert replay.status_code == 400
+    exchange.assert_called_once()
+    assert db.get_token() is not None
+    assert db.get_token().refresh_token == "hosted-refresh"
+
+
+def test_hosted_google_denial_consumes_state_without_overwriting_token(
+    configured_env, monkeypatch
+):
+    _enable_hosted_google_oauth(monkeypatch)
+    db.save_token("existing-refresh", None, 0, "scope")
+    db.save_google_oauth_state(
+        "denied-state",
+        account_id="default",
+        callback_uri="http://testserver/callback",
+        expires_at=int(time.time()) + 60,
+    )
+
+    with TestClient(create_protected_app()) as client:
+        denied = client.get("/callback?state=denied-state&error=access_denied")
+        replay = client.get("/callback?state=denied-state&code=unused")
+
+    assert denied.status_code == 400
+    assert "was denied" in denied.text
+    assert replay.status_code == 400
+    assert db.get_token() is not None
+    assert db.get_token().refresh_token == "existing-refresh"
+
+
+def test_hosted_google_exchange_failure_consumes_state_without_overwriting_token(
+    configured_env, monkeypatch
+):
+    _enable_hosted_google_oauth(monkeypatch)
+    db.save_token("existing-refresh", None, 0, "scope")
+    db.save_google_oauth_state(
+        "failed-state",
+        account_id="default",
+        callback_uri="http://testserver/callback",
+        expires_at=int(time.time()) + 60,
+    )
+
+    with patch(
+        "google_tasks_mcp.http_app.build_authorization_flow", return_value=object()
+    ), patch(
+        "google_tasks_mcp.http_app.exchange_code",
+        side_effect=AuthRequired("synthetic exchange failure"),
+    ) as exchange, TestClient(create_protected_app()) as client:
+        failed = client.get("/callback?state=failed-state&code=synthetic-code")
+        replay = client.get("/callback?state=failed-state&code=synthetic-code")
+
+    assert failed.status_code == 400
+    assert "could not be exchanged" in failed.text
+    assert "synthetic-code" not in failed.text
+    assert "synthetic exchange failure" not in failed.text
+    assert replay.status_code == 400
+    exchange.assert_called_once()
+    assert db.get_token() is not None
+    assert db.get_token().refresh_token == "existing-refresh"
 
 
 def test_mcp_requires_bearer_token(configured_env):

@@ -15,6 +15,8 @@ def reset_global_state(monkeypatch: pytest.MonkeyPatch, tmp_path):
         "GOOGLE_CLIENT_SECRET",
         "GOOGLE_REDIRECT_URI",
         "GOOGLE_REFRESH_TOKEN",
+        "GOOGLE_OAUTH_ONBOARDING_URL",
+        "GOOGLE_OAUTH_SETUP_SECRET",
         "GOOGLE_OAUTH_KEYS_PATH",
         "MCP_BEARER_TOKEN",
         "DB_PATH",

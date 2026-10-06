@@ -1,11 +1,11 @@
 """
 Middleware that:
-1. Intercepts requests to /mcp (or cfg.mcp_path_prefix)
+1. Intercepts requests at cfg.mcp_path_prefix
 2. Validates the Bearer token from Authorization header
 3. If valid, forwards to the underlying MCP ASGI app
 4. If invalid, returns 401
 
-All other paths (/, /authorize, /token, etc.) pass through to the OAuth router.
+All other paths pass through to the composed application.
 """
 
 import logging
@@ -52,7 +52,9 @@ class MCPAuthMiddleware:
             return
 
         path = scope.get("path", "")
-        if not path.startswith(self.cfg.mcp_path_prefix):
+        if path != self.cfg.mcp_path_prefix and not path.startswith(
+            f"{self.cfg.mcp_path_prefix.rstrip('/')}/"
+        ):
             await self.app(scope, receive, send)
             return
 
