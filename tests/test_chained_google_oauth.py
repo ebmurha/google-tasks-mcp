@@ -1,0 +1,166 @@
+from __future__ import annotations
+
+import base64
+import hashlib
+from urllib.parse import parse_qs, urlparse
+
+import pytest
+from starlette.testclient import TestClient
+
+from google_tasks_mcp import db, http_app
+from google_tasks_mcp.config import reset_settings_cache
+from google_tasks_mcp.errors import AuthRequired
+
+
+CLIENT_REDIRECT = "https://unrelated-client.example/oauth/callback"
+VERIFIER = "unrelated-client-pkce-verifier-with-enough-entropy"
+CHALLENGE = base64.urlsafe_b64encode(
+    hashlib.sha256(VERIFIER.encode()).digest()
+).rstrip(b"=").decode()
+
+
+def _configure(monkeypatch, issuer_path: str) -> tuple[str, str, str]:
+    issuer = f"https://tasks.example{issuer_path}"
+    resource = f"{issuer}/mcp"
+    callback = f"{issuer}/callback"
+    monkeypatch.setenv("GOOGLE_REDIRECT_URI", callback)
+    monkeypatch.setenv("MCP_OAUTH_ISSUER", issuer)
+    monkeypatch.setenv("MCP_OAUTH_RESOURCE", resource)
+    monkeypatch.setenv("MCP_OAUTH_CLIENT_ID", "unrelated-client")
+    monkeypatch.setenv("MCP_OAUTH_CLIENT_SECRET", "unrelated-secret")
+    monkeypatch.setenv("MCP_OAUTH_SIGNING_SECRET", "z" * 64)
+    monkeypatch.setenv("MCP_OAUTH_REDIRECT_URIS", CLIENT_REDIRECT)
+    reset_settings_cache()
+    return issuer, resource, callback
+
+
+def _approve(client: TestClient, issuer: str, resource: str):
+    return client.post(
+        f"{urlparse(issuer).path}/authorize",
+        data={
+            "response_type": "code",
+            "client_id": "unrelated-client",
+            "redirect_uri": CLIENT_REDIRECT,
+            "state": "original-client-state",
+            "resource": resource,
+            "code_challenge": CHALLENGE,
+            "code_challenge_method": "S256",
+        },
+        follow_redirects=False,
+    )
+
+
+@pytest.mark.parametrize("issuer_path", ["", "/team"])
+def test_connect_chains_google_and_resumes_after_restart(
+    configured_env, monkeypatch, issuer_path
+):
+    issuer, resource, callback = _configure(monkeypatch, issuer_path)
+    monkeypatch.setattr(
+        http_app,
+        "get_credentials",
+        lambda _account_id=None: (_ for _ in ()).throw(AuthRequired("missing")),
+    )
+    monkeypatch.setattr(http_app, "build_authorization_flow", lambda *a, **k: object())
+    monkeypatch.setattr(
+        http_app,
+        "authorization_url",
+        lambda _flow, *, state: f"https://google.example/authorize?state={state}",
+    )
+
+    with TestClient(http_app.create_app()) as client:
+        google_redirect = _approve(client, issuer, resource)
+    assert google_redirect.status_code == 302
+    google_state = parse_qs(urlparse(google_redirect.headers["location"]).query)["state"][0]
+    with db._connect() as conn:
+        row = conn.execute(
+            "SELECT state_hash, mcp_client_id, mcp_redirect_uri, mcp_resource, "
+            "mcp_code_challenge, mcp_state, mcp_issuer FROM google_oauth_states"
+        ).fetchone()
+    assert row["state_hash"] != google_state
+    assert row["mcp_client_id"] == "unrelated-client"
+    assert row["mcp_redirect_uri"] == CLIENT_REDIRECT
+    assert row["mcp_resource"] == resource
+    assert row["mcp_code_challenge"] == CHALLENGE
+    assert row["mcp_state"] == "original-client-state"
+    assert row["mcp_issuer"] == issuer
+
+    def exchange(code, *, flow, account_id):
+        assert code == "synthetic-google-code"
+        db.save_token("refresh", "access", 9999999999, "scope", account_id=account_id)
+        return db.get_token(account_id)
+
+    monkeypatch.setattr(http_app, "exchange_code", exchange)
+    callback_path = urlparse(callback).path
+    with TestClient(http_app.create_app()) as restarted:
+        resumed = restarted.get(
+            callback_path,
+            params={"state": google_state, "code": "synthetic-google-code"},
+            follow_redirects=False,
+        )
+        replay = restarted.get(
+            callback_path,
+            params={"state": google_state, "code": "synthetic-google-code"},
+            follow_redirects=False,
+        )
+        resumed_params = parse_qs(urlparse(resumed.headers["location"]).query)
+        token = restarted.post(
+            f"{urlparse(issuer).path}/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": "unrelated-client",
+                "client_secret": "unrelated-secret",
+                "code": resumed_params["code"][0],
+                "redirect_uri": CLIENT_REDIRECT,
+                "resource": resource,
+                "code_verifier": VERIFIER,
+            },
+        )
+
+    assert resumed.status_code == 302
+    assert resumed_params["state"] == ["original-client-state"]
+    assert resumed_params["iss"] == [issuer]
+    assert token.status_code == 200
+    assert replay.status_code == 400
+
+
+def test_connect_skips_google_when_stored_authorization_is_usable(
+    configured_env, monkeypatch
+):
+    issuer, resource, _callback = _configure(monkeypatch, "")
+    monkeypatch.setattr(http_app, "get_credentials", lambda _account_id=None: object())
+    with TestClient(http_app.create_app()) as client:
+        response = _approve(client, issuer, resource)
+    params = parse_qs(urlparse(response.headers["location"]).query)
+    assert urlparse(response.headers["location"]).netloc == "unrelated-client.example"
+    assert "code" in params
+    assert params["state"] == ["original-client-state"]
+
+
+def test_google_denial_returns_client_error_without_mcp_code(
+    configured_env, monkeypatch
+):
+    issuer, resource, callback = _configure(monkeypatch, "")
+    monkeypatch.setattr(
+        http_app,
+        "get_credentials",
+        lambda _account_id=None: (_ for _ in ()).throw(AuthRequired("revoked")),
+    )
+    monkeypatch.setattr(http_app, "build_authorization_flow", lambda *a, **k: object())
+    monkeypatch.setattr(
+        http_app,
+        "authorization_url",
+        lambda _flow, *, state: f"https://google.example/authorize?state={state}",
+    )
+    with TestClient(http_app.create_app()) as client:
+        started = _approve(client, issuer, resource)
+        state = parse_qs(urlparse(started.headers["location"]).query)["state"][0]
+        denied = client.get(
+            urlparse(callback).path,
+            params={"state": state, "error": "access_denied"},
+            follow_redirects=False,
+        )
+    params = parse_qs(urlparse(denied.headers["location"]).query)
+    assert params["error"] == ["access_denied"]
+    assert params["state"] == ["original-client-state"]
+    assert params["iss"] == [issuer]
+    assert "code" not in params

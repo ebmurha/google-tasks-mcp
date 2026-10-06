@@ -114,11 +114,17 @@ root-path aliases. The MCP gateway likewise serves the paths declared by
 public paths unchanged. The displayed onboarding link never contains the setup
 secret.
 
-Open `GOOGLE_OAUTH_ONBOARDING_URL`, enter the operator setup password, continue
-to Google, and approve access. The server validates durable single-use state,
-exchanges the code, and stores the Google token directly in SQLite. No token is
-displayed or copied. If an authenticated MCP tool finds no usable Google token,
-its error includes the same safe onboarding URL.
+OAuth-capable MCP clients use one continuous Connect or Reconnect flow. After
+the server's MCP consent is approved, it verifies the configured Google
+account. A usable Google credential continues directly to the MCP client. A
+missing or rejected Google credential continues through Google consent, stores
+the Google token in SQLite, and then returns to the same MCP client with its
+original OAuth state and PKCE binding. No token is displayed or copied.
+
+`GOOGLE_OAUTH_ONBOARDING_URL` remains a separately password-protected recovery
+page. Open it directly only when explicit operator recovery is needed. If an
+authenticated MCP tool finds no usable Google token, its error includes this
+safe recovery URL.
 
 ### Local and recovery CLI
 
@@ -228,9 +234,10 @@ The server does not require a particular hostname or derive these choices from
 an owner-specific URL.
 
 MCP OAuth authenticates the client to this server. Google OAuth independently
-authorizes this server to call Google Tasks. Hosted deployments can use the
-operator onboarding URL above; connecting an MCP client never grants permission
-to replace the server's Google account.
+authorizes this server to call Google Tasks. The MCP consent flow coordinates
+the two layers so Connect and Reconnect cannot finish successfully while the
+configured Google account is knowingly unusable. The standalone operator page
+remains available for explicit recovery.
 
 Leave `MCP_OAUTH_REDIRECT_URIS` empty to keep OAuth gateway mode disabled.
 

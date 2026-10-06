@@ -172,6 +172,19 @@ OAuth gateway must provide durable storage for registered clients and refresh
 token hashes. The legacy static bearer-token path remains valid for trusted MCP
 clients that can supply a fixed Authorization header.
 
+For the single-account hosted server, successful MCP consent must also ensure
+that the default Google account is usable before an MCP authorization code is
+issued. If Google authorization is missing or rejected during refresh, the
+server must durably suspend the validated MCP authorization transaction,
+continue directly into Google OAuth, and resume the same transaction after the
+Google callback succeeds. The resumed response must preserve the validated MCP
+client, redirect URI, resource, PKCE challenge, client state, and issuer. A
+Google denial, invalid or replayed state, callback mismatch, expiry, or exchange
+failure must not issue an MCP authorization code. This chained flow is
+client-neutral and must work at root and configured subpaths. The separately
+protected hosted Google onboarding page remains an explicit recovery surface;
+it is not required during normal MCP Connect or Reconnect.
+
 ## Tasklist Cache Rules
 
 The tasklist `id` / `title` map has two tiers:

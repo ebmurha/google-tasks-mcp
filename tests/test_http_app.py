@@ -358,6 +358,7 @@ def test_oauth_refresh_token_survives_app_restart(configured_env, monkeypatch):
     monkeypatch.setenv("MCP_OAUTH_CLIENT_SECRET", "mcp-client-secret")
     monkeypatch.setenv("MCP_OAUTH_SIGNING_SECRET", "x" * 64)
     monkeypatch.setenv("MCP_OAUTH_REDIRECT_URIS", "https://client.example/callback")
+    monkeypatch.setattr("google_tasks_mcp.http_app.get_credentials", lambda _account_id=None: object())
     reset_settings_cache()
 
     verifier = "test-verifier-with-enough-entropy-for-pkce"

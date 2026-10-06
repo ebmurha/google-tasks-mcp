@@ -145,9 +145,9 @@ def _needs_refresh(token: db.Token) -> bool:
     return token.access_expires_at <= int(time.time()) + REFRESH_BUFFER_SECONDS
 
 
-def get_credentials() -> Credentials:
+def get_credentials(account_id: str | None = None) -> Credentials:
     settings = get_settings()
-    account_id = get_current_account_id()
+    account_id = account_id or get_current_account_id()
     token = db.get_token(account_id)
     if token is None:
         raise AuthRequired(f"Google account '{account_id}' is not connected")

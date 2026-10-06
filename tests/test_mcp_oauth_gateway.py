@@ -29,6 +29,10 @@ def _configure(monkeypatch) -> None:
     monkeypatch.setenv("MCP_OAUTH_SIGNING_SECRET", "s" * 64)
     monkeypatch.setenv("MCP_OAUTH_REDIRECT_URIS", REDIRECT_URI)
     monkeypatch.setenv("MCP_OAUTH_ENABLE_DCR", "true")
+    monkeypatch.setattr(
+        "google_tasks_mcp.http_app.get_credentials",
+        lambda _account_id=None: object(),
+    )
     reset_settings_cache()
 
 

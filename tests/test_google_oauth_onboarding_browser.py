@@ -3,6 +3,7 @@ from __future__ import annotations
 import socket
 import threading
 import time
+from urllib.parse import parse_qs, urlencode, urlparse
 from contextlib import contextmanager
 
 import pytest
@@ -17,6 +18,8 @@ from starlette.testclient import TestClient
 from google_tasks_mcp import db
 from google_tasks_mcp import http_app
 from google_tasks_mcp.config import reset_settings_cache
+from google_tasks_mcp.errors import AuthRequired
+from mcp_oauth_gateway.config import GatewayConfig
 
 
 def _free_port() -> int:
@@ -123,3 +126,91 @@ def test_hosted_google_onboarding_completes_and_survives_restart(
         restarted = restarted_client.get(onboarding_path)
     assert restarted.status_code == 200
     assert "Google is connected" in restarted.text
+
+
+@pytest.mark.parametrize("deployment_path", ["", "/team"])
+def test_mcp_connect_chains_google_and_returns_to_unrelated_client(
+    configured_env, monkeypatch, deployment_path: str
+):
+    app_port = _free_port()
+    external_port = _free_port()
+    app_origin = f"http://127.0.0.1:{app_port}"
+    external_origin = f"http://127.0.0.1:{external_port}"
+    issuer = f"{app_origin}{deployment_path}"
+    resource = f"{issuer}/mcp"
+    callback_url = f"{issuer}/callback"
+    client_callback = f"{external_origin}/client/callback"
+    provider_url = f"{external_origin}/google/authorize"
+
+    monkeypatch.setenv("GOOGLE_REDIRECT_URI", callback_url)
+    monkeypatch.setenv("MCP_OAUTH_ISSUER", issuer)
+    monkeypatch.setenv("MCP_OAUTH_RESOURCE", resource)
+    monkeypatch.setenv("MCP_OAUTH_CLIENT_ID", "browser-neutral-client")
+    monkeypatch.setenv("MCP_OAUTH_CLIENT_SECRET", "browser-neutral-secret")
+    monkeypatch.setenv("MCP_OAUTH_SIGNING_SECRET", "b" * 64)
+    monkeypatch.setenv("MCP_OAUTH_REDIRECT_URIS", client_callback)
+    monkeypatch.setenv("MCP_OAUTH_ADMIN_PASSWORD", "operator-password")
+    reset_settings_cache()
+    monkeypatch.setattr(GatewayConfig, "validate", lambda self: None)
+    monkeypatch.setattr(
+        http_app,
+        "get_credentials",
+        lambda _account_id=None: (_ for _ in ()).throw(AuthRequired("missing")),
+    )
+    monkeypatch.setattr(http_app, "build_authorization_flow", lambda *a, **k: object())
+    monkeypatch.setattr(
+        http_app,
+        "authorization_url",
+        lambda _flow, *, state: f"{provider_url}?state={state}",
+    )
+
+    def exchange_code(code: str, *, flow, account_id: str):
+        assert code == "browser-google-code"
+        db.save_token("browser-refresh", "browser-access", 9999999999, "scope")
+        return db.get_token(account_id)
+
+    monkeypatch.setattr(http_app, "exchange_code", exchange_code)
+
+    async def google_authorize(request: Request) -> RedirectResponse:
+        state = request.query_params["state"]
+        return RedirectResponse(
+            f"{callback_url}?{urlencode({'state': state, 'code': 'browser-google-code'})}",
+            status_code=302,
+        )
+
+    async def client_done(_request: Request):
+        from starlette.responses import HTMLResponse
+        return HTMLResponse("<h1>Client connected</h1>")
+
+    external_app = Starlette(routes=[
+        Route("/google/authorize", google_authorize),
+        Route("/client/callback", client_done),
+    ])
+    authorize_query = urlencode({
+        "response_type": "code",
+        "client_id": "browser-neutral-client",
+        "redirect_uri": client_callback,
+        "state": "browser-client-state",
+        "resource": resource,
+        "code_challenge": "browser-pkce-challenge",
+        "code_challenge_method": "S256",
+    })
+
+    with _serve(external_app, external_port), _serve(http_app.create_app(), app_port):
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(channel="chrome", headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(f"{issuer}/authorize?{authorize_query}")
+                page.get_by_label("Admin password").fill("operator-password")
+                page.get_by_role("button", name="Approve access").click()
+                page.wait_for_url(f"{client_callback}?*")
+                params = parse_qs(urlparse(page.url).query)
+                assert page.get_by_text("Client connected").is_visible()
+            finally:
+                browser.close()
+
+    assert params["state"] == ["browser-client-state"]
+    assert params["iss"] == [issuer]
+    assert "code" in params
+    assert db.get_token("default").refresh_token == "browser-refresh"
