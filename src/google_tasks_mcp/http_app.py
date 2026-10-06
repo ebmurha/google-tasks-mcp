@@ -25,6 +25,7 @@ from .account import DEFAULT_ACCOUNT_ID, reset_current_account_id, set_current_a
 from .auth import authorization_url, build_authorization_flow, exchange_code
 from .config import Settings, get_settings
 from .errors import AuthRequired, ConfigError
+from .healthcheck import health_path_for_issuer
 from .server import create_mcp_server
 
 
@@ -281,9 +282,8 @@ def create_app() -> ASGIApp:
     redirect_uris = [u.strip() for u in raw_uris.split(",") if u.strip()]
     issuer = os.environ["MCP_OAUTH_ISSUER"].rstrip("/")
     resource = os.environ.get("MCP_OAUTH_RESOURCE", f"{issuer}/mcp").rstrip("/")
-    issuer_path = _configured_path(issuer, "")
     resource_path = _configured_path(resource, "/mcp")
-    health_path = f"{issuer_path}/healthz"
+    health_path = health_path_for_issuer(issuer)
     return add_mcp_oauth_gateway(
         _build_starlette_app(mcp_path=resource_path, health_path=health_path),
         issuer=issuer,
