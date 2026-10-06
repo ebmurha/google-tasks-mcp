@@ -929,6 +929,7 @@ def create_mcp_server() -> FastMCP:
                 idempotentHint=metadata.idempotent,
                 openWorldHint=True,
             ),
+            meta={"securitySchemes": [{"type": "oauth2", "scopes": ["mcp"]}]},
             structured_output=True,
         )
     return mcp

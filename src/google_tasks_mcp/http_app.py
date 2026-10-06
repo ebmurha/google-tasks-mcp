@@ -116,9 +116,12 @@ def create_app() -> ASGIApp:
     """Build the app with the OAuth 2.0 authorization-server gateway."""
     raw_uris = os.environ.get("MCP_OAUTH_REDIRECT_URIS", "")
     redirect_uris = [u.strip() for u in raw_uris.split(",") if u.strip()]
+    issuer = os.environ["MCP_OAUTH_ISSUER"].rstrip("/")
+    resource = os.environ.get("MCP_OAUTH_RESOURCE", f"{issuer}/mcp").rstrip("/")
     return add_mcp_oauth_gateway(
         _build_starlette_app(),
-        issuer=os.environ["MCP_OAUTH_ISSUER"],
+        issuer=issuer,
+        resource=resource,
         client_id=os.environ["MCP_OAUTH_CLIENT_ID"],
         client_secret=os.environ["MCP_OAUTH_CLIENT_SECRET"],
         signing_secret=os.environ["MCP_OAUTH_SIGNING_SECRET"],
@@ -128,7 +131,10 @@ def create_app() -> ASGIApp:
         set_account_context=set_current_account_id,
         reset_account_context=reset_current_account_id,
         refresh_token_backend=db.McpOAuthRefreshTokenBackend(),
+        client_backend=db.McpOAuthClientBackend(),
         allowed_redirect_uris=redirect_uris,
+        enable_dcr=os.environ.get("MCP_OAUTH_ENABLE_DCR", "").strip().lower()
+        in {"1", "true", "yes", "on"},
     )
 
 

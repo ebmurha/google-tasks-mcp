@@ -10,6 +10,7 @@ Implements:
 """
 import base64
 import hashlib
+import html
 import json
 import time
 import urllib.parse
@@ -19,7 +20,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route, Router
 
-from .config import GatewayConfig
+from .config import GatewayConfig, well_known_url
 from .store import TokenStore
 
 # ---------------------------------------------------------------------------
@@ -58,6 +59,8 @@ CONSENT_HTML = """\
     <input type="hidden" name="client_id"      value="{client_id}">
     <input type="hidden" name="redirect_uri"   value="{redirect_uri}">
     <input type="hidden" name="code_challenge" value="{code_challenge}">
+    <input type="hidden" name="code_challenge_method" value="S256">
+    <input type="hidden" name="resource"       value="{resource}">
     <input type="hidden" name="response_type"  value="code">
     <label for="pw">Admin password</label>
     <input type="password" id="pw" name="password" autofocus placeholder="password">
@@ -94,6 +97,8 @@ AUTOAPPROVE_HTML = """\
     <input type="hidden" name="client_id"      value="{client_id}">
     <input type="hidden" name="redirect_uri"   value="{redirect_uri}">
     <input type="hidden" name="code_challenge" value="{code_challenge}">
+    <input type="hidden" name="code_challenge_method" value="S256">
+    <input type="hidden" name="resource"       value="{resource}">
     <input type="hidden" name="response_type"  value="code">
     <button type="submit">Approve access</button>
   </form>
@@ -102,6 +107,11 @@ AUTOAPPROVE_HTML = """\
 </body>
 </html>
 """
+
+CONSENT_CSP = (
+    "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
+    "base-uri 'none'; frame-ancestors 'none'"
+)
 
 
 def _json(data: dict, status: int = 200) -> JSONResponse:
@@ -113,10 +123,67 @@ def _error(error: str, description: str, status: int = 400) -> JSONResponse:
     return _json({"error": error, "error_description": description}, status)
 
 
+def _consent_response(
+    template: str,
+    *,
+    state: str,
+    client_id: str,
+    redirect_uri: str,
+    code_challenge: str,
+    resource: str,
+    issuer: str,
+    error_block: str = "",
+    status: int = 200,
+) -> HTMLResponse:
+    rendered = template.format(
+        state=html.escape(state, quote=True),
+        client_id=html.escape(client_id, quote=True),
+        redirect_uri=html.escape(redirect_uri, quote=True),
+        code_challenge=html.escape(code_challenge, quote=True),
+        resource=html.escape(resource, quote=True),
+        issuer=html.escape(issuer, quote=True),
+        error_block=error_block,
+    )
+    return HTMLResponse(
+        rendered,
+        status_code=status,
+        headers={
+            "Content-Security-Policy": CONSENT_CSP,
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 def _pkce_verify(verifier: str, challenge: str) -> bool:
     digest = hashlib.sha256(verifier.encode()).digest()
     computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
     return computed == challenge
+
+
+def _authorization_redirect(
+    redirect_uri: str,
+    *,
+    issuer: str,
+    state: str,
+    code: str | None = None,
+    error: str | None = None,
+    description: str | None = None,
+) -> RedirectResponse:
+    params = {"iss": issuer}
+    if state:
+        params["state"] = state
+    if code:
+        params["code"] = code
+    if error:
+        params["error"] = error
+    if description:
+        params["error_description"] = description
+    separator = "&" if "?" in redirect_uri else "?"
+    return RedirectResponse(
+        redirect_uri + separator + urllib.parse.urlencode(params),
+        status_code=302,
+    )
 
 
 def _basic_auth(request: Request) -> Optional[tuple]:
@@ -137,6 +204,12 @@ def _basic_auth(request: Request) -> Optional[tuple]:
 # ---------------------------------------------------------------------------
 
 def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
+    authorization_metadata_path = urllib.parse.urlsplit(
+        well_known_url(cfg.issuer, "oauth-authorization-server")
+    ).path
+    protected_resource_metadata_path = urllib.parse.urlsplit(
+        well_known_url(cfg.resource, "oauth-protected-resource")
+    ).path
 
     # ---- Discovery ---------------------------------------------------------
 
@@ -152,10 +225,18 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
             "code_challenge_methods_supported": ["S256"],
             "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
             "scopes_supported": ["mcp"],
+            "authorization_response_iss_parameter_supported": True,
         }
         if cfg.enable_dcr:
             meta["registration_endpoint"] = f"{base}/register"
         return _json(meta)
+
+    async def protected_resource(_request: Request) -> JSONResponse:
+        return _json({
+            "resource": cfg.resource,
+            "authorization_servers": [cfg.issuer.rstrip("/")],
+            "scopes_supported": ["mcp"],
+        })
 
     # ---- /authorize GET (show consent) ------------------------------------
 
@@ -165,25 +246,41 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
         redirect_uri = params.get("redirect_uri", "")
         state        = params.get("state", "")
         code_challenge = params.get("code_challenge", "")
+        code_challenge_method = params.get("code_challenge_method", "")
+        resource = params.get("resource", "")
         response_type  = params.get("response_type", "code")
-
-        if response_type != "code":
-            return _error("unsupported_response_type", "Only 'code' is supported")
 
         if not _validate_client_and_redirect(cfg, store, client_id, redirect_uri):
             return _error("unauthorized_client",
                           f"client_id or redirect_uri not recognised: {client_id} / {redirect_uri}",
                           status=401)
 
+        if response_type != "code":
+            return _authorization_redirect(
+                redirect_uri, issuer=cfg.issuer, state=state,
+                error="unsupported_response_type", description="Only 'code' is supported",
+            )
+        if resource != cfg.resource:
+            return _authorization_redirect(
+                redirect_uri, issuer=cfg.issuer, state=state,
+                error="invalid_target", description="resource must identify this MCP server",
+            )
+        if not code_challenge or code_challenge_method != "S256":
+            return _authorization_redirect(
+                redirect_uri, issuer=cfg.issuer, state=state,
+                error="invalid_request", description="PKCE S256 is required",
+            )
+
         if cfg.admin_password:
-            html = CONSENT_HTML.format(
+            return _consent_response(
+                CONSENT_HTML,
                 state=state, client_id=client_id, redirect_uri=redirect_uri,
-                code_challenge=code_challenge, issuer=cfg.issuer, error_block="")
-        else:
-            html = AUTOAPPROVE_HTML.format(
-                state=state, client_id=client_id, redirect_uri=redirect_uri,
-                code_challenge=code_challenge, issuer=cfg.issuer)
-        return HTMLResponse(html)
+                code_challenge=code_challenge, resource=resource,
+                issuer=cfg.issuer, error_block="")
+        return _consent_response(
+            AUTOAPPROVE_HTML,
+            state=state, client_id=client_id, redirect_uri=redirect_uri,
+            code_challenge=code_challenge, resource=resource, issuer=cfg.issuer)
 
     # ---- /authorize POST (form submit) ------------------------------------
 
@@ -193,26 +290,39 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
         redirect_uri   = str(form.get("redirect_uri", ""))
         state          = str(form.get("state", ""))
         code_challenge = str(form.get("code_challenge", ""))
+        code_challenge_method = str(form.get("code_challenge_method", ""))
+        resource       = str(form.get("resource", ""))
         password       = str(form.get("password", ""))
 
         if not _validate_client_and_redirect(cfg, store, client_id, redirect_uri):
             return _error("unauthorized_client", "client_id or redirect_uri not recognised", 401)
+        if resource != cfg.resource:
+            return _authorization_redirect(
+                redirect_uri, issuer=cfg.issuer, state=state,
+                error="invalid_target", description="resource must identify this MCP server",
+            )
+        if not code_challenge or code_challenge_method != "S256":
+            return _authorization_redirect(
+                redirect_uri, issuer=cfg.issuer, state=state,
+                error="invalid_request", description="PKCE S256 is required",
+            )
 
         # Password gate
         if cfg.admin_password:
             import hmac as _hmac
             if not _hmac.compare_digest(password, cfg.admin_password):
-                html = CONSENT_HTML.format(
+                return _consent_response(
+                    CONSENT_HTML,
                     state=state, client_id=client_id, redirect_uri=redirect_uri,
-                    code_challenge=code_challenge, issuer=cfg.issuer,
-                    error_block='<p class="err">Incorrect password. Try again.</p>')
-                return HTMLResponse(html, status_code=401)
+                    code_challenge=code_challenge, resource=resource, issuer=cfg.issuer,
+                    error_block='<p class="err">Incorrect password. Try again.</p>',
+                    status=401)
 
-        code = store.issue_code(client_id, redirect_uri, code_challenge or None,
+        code = store.issue_code(client_id, redirect_uri, code_challenge or None, resource,
                                 cfg.auth_code_ttl)
-        sep = "&" if "?" in redirect_uri else "?"
-        location = f"{redirect_uri}{sep}code={code}&state={urllib.parse.quote(state)}"
-        return RedirectResponse(location, status_code=302)
+        return _authorization_redirect(
+            redirect_uri, issuer=cfg.issuer, state=state, code=code,
+        )
 
     # ---- /token ------------------------------------------------------------
 
@@ -241,22 +351,35 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
             code         = str(form.get("code", ""))
             redirect_uri = str(form.get("redirect_uri", ""))
             verifier     = str(form.get("code_verifier", ""))
+            resource     = str(form.get("resource", ""))
 
-            rec = store.consume_code(code)
+            rec = store.get_code(code)
             if not rec:
                 return _error("invalid_grant", "Code invalid or expired")
             if rec["client_id"] != req_client_id:
                 return _error("invalid_grant", "client_id mismatch")
             if rec["redirect_uri"] != redirect_uri:
                 return _error("invalid_grant", "redirect_uri mismatch")
+            if resource != cfg.resource or rec["resource"] != resource:
+                return _error("invalid_target", "resource mismatch")
             if rec["code_challenge"]:
                 if not verifier:
                     return _error("invalid_grant", "code_verifier required")
                 if not _pkce_verify(verifier, rec["code_challenge"]):
                     return _error("invalid_grant", "PKCE verification failed")
 
-            access_token  = store.issue_access_token(req_client_id, cfg.access_token_ttl)
-            refresh_token = store.issue_refresh_token(req_client_id, cfg.refresh_token_ttl)
+            rec = store.consume_code(
+                code,
+                client_id=req_client_id,
+                redirect_uri=redirect_uri,
+                resource=resource,
+                code_challenge=rec["code_challenge"],
+            )
+            if not rec:
+                return _error("invalid_grant", "Code invalid, expired, or already used")
+
+            access_token  = store.issue_access_token(req_client_id, resource, cfg.access_token_ttl)
+            refresh_token = store.issue_refresh_token(req_client_id, resource, cfg.refresh_token_ttl)
             return _json({
                 "access_token":  access_token,
                 "token_type":    "Bearer",
@@ -268,14 +391,15 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
         # --- refresh_token grant ---------------------------------------------
         if grant_type == "refresh_token":
             rt = str(form.get("refresh_token", ""))
-            rec = store.consume_refresh_token(rt)
+            resource = str(form.get("resource", ""))
+            if resource != cfg.resource:
+                return _error("invalid_target", "resource mismatch")
+            rec = store.consume_refresh_token(rt, req_client_id, resource)
             if not rec:
                 return _error("invalid_grant", "Refresh token invalid or expired")
-            if rec["client_id"] != req_client_id:
-                return _error("invalid_grant", "client_id mismatch")
 
-            access_token  = store.issue_access_token(req_client_id, cfg.access_token_ttl)
-            new_refresh   = store.issue_refresh_token(req_client_id, cfg.refresh_token_ttl)
+            access_token  = store.issue_access_token(req_client_id, resource, cfg.access_token_ttl)
+            new_refresh   = store.issue_refresh_token(req_client_id, resource, cfg.refresh_token_ttl)
             return _json({
                 "access_token":  access_token,
                 "token_type":    "Bearer",
@@ -312,18 +436,25 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
                 return _error("invalid_redirect_uri",
                               f"Redirect URI not in allowlist: {uri}")
         record = store.register_dcr_client(body)
+        record["client_id_issued_at"] = int(time.time())
+        record["client_secret_expires_at"] = 0
         return _json(record, status=201)
 
     # ---- routing -----------------------------------------------------------
 
     routes = [
         Route("/.well-known/oauth-authorization-server", discovery),
+        Route("/.well-known/oauth-protected-resource", protected_resource),
         Route("/authorize", authorize_get,  methods=["GET"]),
         Route("/authorize", authorize_post, methods=["POST"]),
         Route("/token",     token,          methods=["POST"]),
         Route("/revoke",    revoke,         methods=["POST"]),
         Route("/register",  register,       methods=["POST"]),
     ]
+    if authorization_metadata_path != "/.well-known/oauth-authorization-server":
+        routes.insert(1, Route(authorization_metadata_path, discovery))
+    if protected_resource_metadata_path != "/.well-known/oauth-protected-resource":
+        routes.insert(2, Route(protected_resource_metadata_path, protected_resource))
     return Router(routes=routes)
 
 
@@ -358,7 +489,5 @@ def _authenticate_client(cfg: GatewayConfig, store: TokenStore,
     if client_id == cfg.client_id:
         return _hmac.compare_digest(client_secret, cfg.client_secret)
     if cfg.enable_dcr:
-        rec = store.get_dcr_client(client_id)
-        if rec:
-            return _hmac.compare_digest(client_secret, rec.get("client_secret", ""))
+        return store.authenticate_dcr_client(client_id, client_secret)
     return False

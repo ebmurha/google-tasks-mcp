@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from google_tasks_mcp.account import reset_current_account_id, set_current_account_id
 from google_tasks_mcp import db
 
@@ -115,12 +117,22 @@ def test_bearer_token_lookup_uses_hash_and_enabled_flag(configured_env):
 
 
 def test_mcp_oauth_refresh_tokens_rotate_and_do_not_store_raw_values(configured_env):
-    db.save_mcp_oauth_refresh_token("refresh-token", "mcp-client", 9999999999)
+    db.save_mcp_oauth_refresh_token(
+        "refresh-token", "mcp-client", "https://tasks.example.com/mcp", 9999999999
+    )
 
-    record = db.consume_mcp_oauth_refresh_token("refresh-token")
-    replay = db.consume_mcp_oauth_refresh_token("refresh-token")
+    record = db.consume_mcp_oauth_refresh_token(
+        "refresh-token", "mcp-client", "https://tasks.example.com/mcp"
+    )
+    replay = db.consume_mcp_oauth_refresh_token(
+        "refresh-token", "mcp-client", "https://tasks.example.com/mcp"
+    )
 
-    assert record == {"client_id": "mcp-client", "expires_at": 9999999999}
+    assert record == {
+        "client_id": "mcp-client",
+        "resource": "https://tasks.example.com/mcp",
+        "expires_at": 9999999999,
+    }
     assert replay is None
 
     with db._connect() as conn:
@@ -131,8 +143,68 @@ def test_mcp_oauth_refresh_tokens_rotate_and_do_not_store_raw_values(configured_
 def test_mcp_oauth_refresh_token_backend(configured_env):
     backend = db.McpOAuthRefreshTokenBackend()
 
-    backend.save("refresh-token", {"client_id": "mcp-client", "expires_at": 9999999999})
-    record = backend.consume("refresh-token")
+    backend.save(
+        "refresh-token",
+        {
+            "client_id": "mcp-client",
+            "resource": "https://tasks.example.com/mcp",
+            "expires_at": 9999999999,
+        },
+    )
+    record = backend.consume(
+        "refresh-token", "mcp-client", "https://tasks.example.com/mcp"
+    )
 
-    assert record == {"client_id": "mcp-client", "expires_at": 9999999999}
-    assert backend.consume("refresh-token") is None
+    assert record == {
+        "client_id": "mcp-client",
+        "resource": "https://tasks.example.com/mcp",
+        "expires_at": 9999999999,
+    }
+    assert backend.consume(
+        "refresh-token", "mcp-client", "https://tasks.example.com/mcp"
+    ) is None
+
+
+def test_mcp_oauth_refresh_token_backend_consumes_once_under_concurrency(configured_env):
+    backend = db.McpOAuthRefreshTokenBackend()
+    resource = "https://tasks.example.com/mcp"
+    backend.save(
+        "refresh-token",
+        {
+            "client_id": "mcp-client",
+            "resource": resource,
+            "expires_at": 9999999999,
+        },
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                lambda _: backend.consume("refresh-token", "mcp-client", resource),
+                range(2),
+            )
+        )
+
+    assert sum(result is not None for result in results) == 1
+
+
+def test_mcp_oauth_clients_persist_only_secret_hash(configured_env):
+    backend = db.McpOAuthClientBackend()
+    metadata = {
+        "client_id": "dcr-client",
+        "redirect_uris": ["https://chatgpt.com/connector_platform_oauth_redirect"],
+    }
+
+    backend.save("dcr-client", "raw-client-secret", metadata)
+
+    assert backend.get("dcr-client") == metadata
+    assert backend.authenticate("dcr-client", "raw-client-secret") is True
+    assert backend.authenticate("dcr-client", "wrong-secret") is False
+    with db._connect() as conn:
+        row = conn.execute(
+            "SELECT client_secret_hash, metadata_json FROM mcp_oauth_clients WHERE client_id = ?",
+            ("dcr-client",),
+        ).fetchone()
+    assert row is not None
+    assert row["client_secret_hash"] != "raw-client-secret"
+    assert "raw-client-secret" not in row["metadata_json"]

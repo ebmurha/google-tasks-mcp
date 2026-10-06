@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sqlite3
 import hashlib
+import hmac
+import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -84,7 +86,16 @@ CREATE TABLE IF NOT EXISTS bearer_tokens (
 CREATE TABLE IF NOT EXISTS mcp_oauth_refresh_tokens (
     token_hash TEXT PRIMARY KEY,
     client_id TEXT NOT NULL,
+    resource TEXT NOT NULL DEFAULT '',
     expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mcp_oauth_clients (
+    client_id TEXT PRIMARY KEY,
+    client_secret_hash TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
@@ -119,6 +130,9 @@ def bearer_token_hash(token: str) -> str:
 def init_db() -> None:
     with _connect() as conn:
         conn.executescript(SCHEMA)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(mcp_oauth_refresh_tokens)")}
+        if "resource" not in columns:
+            conn.execute("ALTER TABLE mcp_oauth_refresh_tokens ADD COLUMN resource TEXT NOT NULL DEFAULT ''")
 
 
 def get_token(account_id: str | None = None) -> Token | None:
@@ -359,40 +373,56 @@ def _oauth_refresh_token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def save_mcp_oauth_refresh_token(token: str, client_id: str, expires_at: float) -> None:
+def save_mcp_oauth_refresh_token(token: str, client_id: str, resource: str, expires_at: float) -> None:
     init_db()
     now = _now()
     with _connect() as conn:
         conn.execute(
             """
-            INSERT INTO mcp_oauth_refresh_tokens (token_hash, client_id, expires_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO mcp_oauth_refresh_tokens (
+                token_hash, client_id, resource, expires_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(token_hash) DO UPDATE SET
                 client_id = excluded.client_id,
+                resource = excluded.resource,
                 expires_at = excluded.expires_at,
                 updated_at = excluded.updated_at
             """,
-            (_oauth_refresh_token_hash(token), client_id, int(expires_at), now, now),
+            (_oauth_refresh_token_hash(token), client_id, resource, int(expires_at), now, now),
         )
 
 
-def consume_mcp_oauth_refresh_token(token: str) -> dict[str, int | str] | None:
+def consume_mcp_oauth_refresh_token(
+    token: str, client_id: str, resource: str
+) -> dict[str, int | str] | None:
     init_db()
     token_hash = _oauth_refresh_token_hash(token)
     now = _now()
     with _connect() as conn:
         row = conn.execute(
             """
-            SELECT client_id, expires_at
-            FROM mcp_oauth_refresh_tokens
+            DELETE FROM mcp_oauth_refresh_tokens
             WHERE token_hash = ?
+              AND client_id = ?
+              AND resource = ?
+              AND expires_at >= ?
+            RETURNING client_id, resource, expires_at
             """,
-            (token_hash,),
+            (token_hash, client_id, resource, now),
         ).fetchone()
-        conn.execute("DELETE FROM mcp_oauth_refresh_tokens WHERE token_hash = ?", (token_hash,))
-    if row is None or row["expires_at"] < now:
+        if row is None:
+            conn.execute(
+                "DELETE FROM mcp_oauth_refresh_tokens WHERE token_hash = ? AND expires_at < ?",
+                (token_hash, now),
+            )
+    if row is None:
         return None
-    return {"client_id": row["client_id"], "expires_at": row["expires_at"]}
+    return {
+        "client_id": row["client_id"],
+        "resource": row["resource"],
+        "expires_at": row["expires_at"],
+    }
 
 
 def revoke_mcp_oauth_refresh_token(token: str) -> None:
@@ -420,11 +450,14 @@ class McpOAuthRefreshTokenBackend:
         save_mcp_oauth_refresh_token(
             token,
             client_id=str(record["client_id"]),
+            resource=str(record["resource"]),
             expires_at=float(record["expires_at"]),
         )
 
-    def consume(self, token: str) -> dict[str, Any] | None:
-        record = consume_mcp_oauth_refresh_token(token)
+    def consume(
+        self, token: str, client_id: str, resource: str
+    ) -> dict[str, Any] | None:
+        record = consume_mcp_oauth_refresh_token(token, client_id, resource)
         return dict(record) if record is not None else None
 
     def revoke(self, token: str) -> None:
@@ -432,3 +465,60 @@ class McpOAuthRefreshTokenBackend:
 
     def purge_expired(self) -> None:
         purge_expired_mcp_oauth_refresh_tokens()
+
+
+def save_mcp_oauth_client(client_id: str, client_secret: str, metadata: dict[str, Any]) -> None:
+    init_db()
+    now = _now()
+    secret_hash = hashlib.sha256(client_secret.encode("utf-8")).hexdigest()
+    metadata_json = json.dumps(metadata, separators=(",", ":"), sort_keys=True)
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO mcp_oauth_clients (
+                client_id, client_secret_hash, metadata_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(client_id) DO UPDATE SET
+                client_secret_hash = excluded.client_secret_hash,
+                metadata_json = excluded.metadata_json,
+                updated_at = excluded.updated_at
+            """,
+            (client_id, secret_hash, metadata_json, now, now),
+        )
+
+
+def get_mcp_oauth_client(client_id: str) -> dict[str, Any] | None:
+    init_db()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT metadata_json FROM mcp_oauth_clients WHERE client_id = ?",
+            (client_id,),
+        ).fetchone()
+    return json.loads(row["metadata_json"]) if row is not None else None
+
+
+def authenticate_mcp_oauth_client(client_id: str, client_secret: str) -> bool:
+    init_db()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT client_secret_hash FROM mcp_oauth_clients WHERE client_id = ?",
+            (client_id,),
+        ).fetchone()
+    if row is None:
+        return False
+    supplied_hash = hashlib.sha256(client_secret.encode("utf-8")).hexdigest()
+    return hmac.compare_digest(supplied_hash, row["client_secret_hash"])
+
+
+class McpOAuthClientBackend:
+    """SQLite-backed dynamic-client store; raw client secrets are never persisted."""
+
+    def save(self, client_id: str, client_secret: str, metadata: dict[str, Any]) -> None:
+        save_mcp_oauth_client(client_id, client_secret, metadata)
+
+    def get(self, client_id: str) -> dict[str, Any] | None:
+        return get_mcp_oauth_client(client_id)
+
+    def authenticate(self, client_id: str, client_secret: str) -> bool:
+        return authenticate_mcp_oauth_client(client_id, client_secret)

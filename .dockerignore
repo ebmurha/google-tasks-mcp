@@ -24,6 +24,10 @@ temp/
 tests/
 samples/
 deploy/
+!deploy/
+deploy/*
+!deploy/litestream.yml
+!deploy/container-entrypoint.sh
 metadata/
 server.json
 manifest.json

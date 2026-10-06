@@ -13,7 +13,7 @@ import logging
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .config import GatewayConfig
+from .config import GatewayConfig, well_known_url
 from .store import TokenStore
 
 
@@ -22,12 +22,14 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _unauthorized(msg: str, cfg: GatewayConfig) -> JSONResponse:
-    metadata_url = f"{cfg.issuer.rstrip('/')}/.well-known/oauth-authorization-server"
+    metadata_url = well_known_url(cfg.resource, "oauth-protected-resource")
     return JSONResponse(
         {"error": "unauthorized", "error_description": msg},
         status_code=401,
         headers={
-            "WWW-Authenticate": f'Bearer resource_metadata="{metadata_url}", error="invalid_token"',
+            "WWW-Authenticate": (
+                f'Bearer resource_metadata="{metadata_url}", scope="mcp", error="invalid_token"'
+            ),
             "Cache-Control": "no-store",
         },
     )
@@ -75,7 +77,11 @@ class MCPAuthMiddleware:
 
         if account_id is None:
             payload = self.store.verify_access_token(token)
-            if not payload:
+            if (
+                not payload
+                or payload.get("iss") != self.cfg.issuer
+                or payload.get("aud") != self.cfg.resource
+            ):
                 LOGGER.debug("mcp_auth_rejected", extra={"path": path, "reason": "invalid_token"})
                 resp = _unauthorized("Token invalid or expired", self.cfg)
                 await resp(scope, receive, send)

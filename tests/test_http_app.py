@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 from urllib.parse import parse_qs, urlparse
 
 from starlette.applications import Starlette
@@ -137,8 +139,8 @@ def test_oauth_gateway_mcp_probe_requires_auth_and_advertises_metadata(configure
     assert response.json()["error"] == "unauthorized"
     assert "list_tasklists" not in response.text
     assert response.headers["www-authenticate"] == (
-        'Bearer resource_metadata="https://tasks.example.com/.well-known/oauth-authorization-server", '
-        'error="invalid_token"'
+        'Bearer resource_metadata="https://tasks.example.com/.well-known/oauth-protected-resource/mcp", '
+        'scope="mcp", error="invalid_token"'
     )
 
 
@@ -150,6 +152,11 @@ def test_oauth_refresh_token_survives_app_restart(configured_env, monkeypatch):
     monkeypatch.setenv("MCP_OAUTH_REDIRECT_URIS", "https://client.example/callback")
     reset_settings_cache()
 
+    verifier = "test-verifier-with-enough-entropy-for-pkce"
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()
+    ).rstrip(b"=").decode()
+
     with TestClient(create_app()) as client:
         authorize = client.post(
             "/authorize",
@@ -158,6 +165,9 @@ def test_oauth_refresh_token_survives_app_restart(configured_env, monkeypatch):
                 "client_id": "mcp-client",
                 "redirect_uri": "https://client.example/callback",
                 "state": "state-1",
+                "resource": "https://tasks.example.com/mcp",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
             },
             follow_redirects=False,
         )
@@ -171,6 +181,8 @@ def test_oauth_refresh_token_survives_app_restart(configured_env, monkeypatch):
                 "client_secret": "mcp-client-secret",
                 "code": code,
                 "redirect_uri": "https://client.example/callback",
+                "resource": "https://tasks.example.com/mcp",
+                "code_verifier": verifier,
             },
         )
         assert token_response.status_code == 200
@@ -184,6 +196,7 @@ def test_oauth_refresh_token_survives_app_restart(configured_env, monkeypatch):
                 "client_id": "mcp-client",
                 "client_secret": "mcp-client-secret",
                 "refresh_token": first_refresh,
+                "resource": "https://tasks.example.com/mcp",
             },
         )
         replay_response = restarted_client.post(
@@ -193,6 +206,7 @@ def test_oauth_refresh_token_survives_app_restart(configured_env, monkeypatch):
                 "client_id": "mcp-client",
                 "client_secret": "mcp-client-secret",
                 "refresh_token": first_refresh,
+                "resource": "https://tasks.example.com/mcp",
             },
         )
 

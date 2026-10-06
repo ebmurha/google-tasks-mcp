@@ -54,10 +54,13 @@ def test_vps_templates_use_placeholders_only():
 
 def test_root_docker_files_exist_and_exclude_secrets():
     dockerfile = _read("Dockerfile")
+    entrypoint = _read("deploy/container-entrypoint.sh")
     dockerignore = _read(".dockerignore")
     compose = _read("docker-compose.yml")
 
-    assert '"python", "-m", "google_tasks_mcp", "--transport", "http"' in dockerfile
+    assert 'ENTRYPOINT ["google-tasks-mcp-entrypoint"]' in dockerfile
+    assert "python -m google_tasks_mcp --transport http" in entrypoint
+    assert "litestream replicate" in entrypoint
     assert "USER google-tasks" in dockerfile
     assert "127.0.0.1:8787:8787" in compose
     assert "google-tasks-data:/var/lib/google-tasks-mcp" in compose
@@ -145,3 +148,11 @@ def test_release_version_is_consistent_across_artifacts():
     assert server_json["packages"][0]["version"] == EXPECTED_VERSION
     assert metadata["version"] == EXPECTED_VERSION
     assert google_tasks_mcp.__version__ == EXPECTED_VERSION
+
+
+def test_oauth_gateway_examples_supply_required_resource_setting():
+    readme = _read("src/mcp_oauth_gateway/README.md")
+
+    assert 'resource=os.environ["MCP_OAUTH_RESOURCE"]' in readme
+    assert 'resource="https://api.example.net/notion/mcp"' in readme
+    assert "MCP_OAUTH_RESOURCE=https://resource.example.com/custom/mcp" in readme

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- HTTP startup can seed the default Google account's refresh token from `GOOGLE_REFRESH_TOKEN`, allowing deployments with disposable SQLite files to rebuild OAuth state from a host-managed secret.
+- Added RFC 9728 protected-resource metadata, resource-bound access and refresh tokens, RFC 9207 issuer identification, PKCE enforcement, and persisted Dynamic Client Registration for current OAuth-capable MCP clients.
+- Added optional Litestream restore and replication for durable SQLite state on hosts with disposable filesystems.
+
+### Compatibility
+- Existing static bearer-token access remains available. MCP tool names, inputs, and response shapes are unchanged.
+
 ## [0.4.0] - 2026-05-21
 
 ### Added
