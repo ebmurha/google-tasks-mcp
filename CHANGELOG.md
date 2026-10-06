@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- OAuth MCP Connect and Reconnect now continue through Google authorization
+  when needed, then resume the exact validated client transaction.
 - Added secure hosted Google-account OAuth onboarding with durable single-use
   state, server-side token exchange, and restart-safe SQLite token storage.
 - HTTP startup can seed the default Google account's refresh token from `GOOGLE_REFRESH_TOKEN`, allowing deployments with disposable SQLite files to rebuild OAuth state from a host-managed secret.

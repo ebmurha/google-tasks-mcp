@@ -42,11 +42,23 @@ class BearerToken:
 
 
 @dataclass(frozen=True)
+class PendingMcpAuthorization:
+    client_id: str
+    redirect_uri: str
+    resource: str
+    code_challenge: str
+    code_challenge_method: str
+    state: str
+    issuer: str
+
+
+@dataclass(frozen=True)
 class GoogleOAuthState:
     account_id: str
     callback_uri: str
     expires_at: int
     consumed_at: int
+    pending_mcp_authorization: PendingMcpAuthorization | None = None
 
 
 SCHEMA = """
@@ -114,7 +126,14 @@ CREATE TABLE IF NOT EXISTS google_oauth_states (
     callback_uri TEXT NOT NULL,
     expires_at INTEGER NOT NULL,
     consumed_at INTEGER,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    mcp_client_id TEXT,
+    mcp_redirect_uri TEXT,
+    mcp_resource TEXT,
+    mcp_code_challenge TEXT,
+    mcp_code_challenge_method TEXT,
+    mcp_state TEXT,
+    mcp_issuer TEXT
 );
 """
 
@@ -150,6 +169,20 @@ def init_db() -> None:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(mcp_oauth_refresh_tokens)")}
         if "resource" not in columns:
             conn.execute("ALTER TABLE mcp_oauth_refresh_tokens ADD COLUMN resource TEXT NOT NULL DEFAULT ''")
+        state_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(google_oauth_states)")
+        }
+        for name in (
+            "mcp_client_id",
+            "mcp_redirect_uri",
+            "mcp_resource",
+            "mcp_code_challenge",
+            "mcp_code_challenge_method",
+            "mcp_state",
+            "mcp_issuer",
+        ):
+            if name not in state_columns:
+                conn.execute(f"ALTER TABLE google_oauth_states ADD COLUMN {name} TEXT")
 
 
 def get_token(account_id: str | None = None) -> Token | None:
@@ -238,15 +271,19 @@ def save_google_oauth_state(
     account_id: str,
     callback_uri: str,
     expires_at: int,
+    pending_mcp_authorization: PendingMcpAuthorization | None = None,
 ) -> None:
     init_db()
+    pending = pending_mcp_authorization
     with _connect() as conn:
         conn.execute(
             """
             INSERT INTO google_oauth_states (
-                state_hash, account_id, callback_uri, expires_at, consumed_at, created_at
+                state_hash, account_id, callback_uri, expires_at, consumed_at, created_at,
+                mcp_client_id, mcp_redirect_uri, mcp_resource, mcp_code_challenge,
+                mcp_code_challenge_method, mcp_state, mcp_issuer
             )
-            VALUES (?, ?, ?, ?, NULL, ?)
+            VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 _google_oauth_state_hash(state),
@@ -254,6 +291,13 @@ def save_google_oauth_state(
                 callback_uri,
                 expires_at,
                 _now(),
+                pending.client_id if pending else None,
+                pending.redirect_uri if pending else None,
+                pending.resource if pending else None,
+                pending.code_challenge if pending else None,
+                pending.code_challenge_method if pending else None,
+                pending.state if pending else None,
+                pending.issuer if pending else None,
             ),
         )
 
@@ -274,7 +318,10 @@ def consume_google_oauth_state(
               AND callback_uri = ?
               AND expires_at >= ?
               AND consumed_at IS NULL
-            RETURNING account_id, callback_uri, expires_at, consumed_at
+            RETURNING account_id, callback_uri, expires_at, consumed_at,
+                      mcp_client_id, mcp_redirect_uri, mcp_resource,
+                      mcp_code_challenge, mcp_code_challenge_method, mcp_state,
+                      mcp_issuer
             """,
             (now, _google_oauth_state_hash(state), callback_uri, now),
         ).fetchone()
@@ -284,11 +331,33 @@ def consume_google_oauth_state(
         )
     if row is None:
         return None
+    pending = None
+    if row["mcp_client_id"] is not None:
+        pending_fields = (
+            "mcp_redirect_uri",
+            "mcp_resource",
+            "mcp_code_challenge",
+            "mcp_code_challenge_method",
+            "mcp_state",
+            "mcp_issuer",
+        )
+        if any(row[field] is None for field in pending_fields):
+            return None
+        pending = PendingMcpAuthorization(
+            client_id=row["mcp_client_id"],
+            redirect_uri=row["mcp_redirect_uri"],
+            resource=row["mcp_resource"],
+            code_challenge=row["mcp_code_challenge"],
+            code_challenge_method=row["mcp_code_challenge_method"],
+            state=row["mcp_state"],
+            issuer=row["mcp_issuer"],
+        )
     return GoogleOAuthState(
         account_id=row["account_id"],
         callback_uri=row["callback_uri"],
         expires_at=row["expires_at"],
         consumed_at=row["consumed_at"],
+        pending_mcp_authorization=pending,
     )
 
 

@@ -24,6 +24,14 @@ app = add_mcp_oauth_gateway(
 
 from .gateway import add_mcp_oauth_gateway
 from .config import GatewayConfig
+from .endpoints import AuthorizationRequest, authorization_redirect
+from .store import TokenStore
 
-__all__ = ["add_mcp_oauth_gateway", "GatewayConfig"]
+__all__ = [
+    "add_mcp_oauth_gateway",
+    "AuthorizationRequest",
+    "authorization_redirect",
+    "GatewayConfig",
+    "TokenStore",
+]
 __version__ = "0.1.0"

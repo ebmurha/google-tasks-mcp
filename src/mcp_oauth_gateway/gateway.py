@@ -12,7 +12,7 @@ from starlette.routing import Mount, Route
 from starlette.types import ASGIApp
 
 from .config import GatewayConfig
-from .endpoints import build_oauth_router
+from .endpoints import AuthorizationApprovalHandler, build_oauth_router
 from .middleware import MCPAuthMiddleware
 from .store import TokenStore
 
@@ -38,6 +38,8 @@ def add_mcp_oauth_gateway(
     client_backend=None,
     mcp_path_prefix: str = "/mcp",
     enable_dcr: bool = False,
+    authorization_approval_handler: AuthorizationApprovalHandler | None = None,
+    token_store: TokenStore | None = None,
 ) -> ASGIApp:
     """
     Wrap an MCP ASGI app with a full OAuth 2.0 front door.
@@ -85,13 +87,13 @@ def add_mcp_oauth_gateway(
     )
     cfg.validate()
 
-    store = TokenStore(
+    store = token_store or TokenStore(
         cfg.signing_secret,
         issuer=cfg.issuer,
         refresh_backend=refresh_token_backend,
         client_backend=client_backend,
     )
-    oauth_router = build_oauth_router(cfg, store)
+    oauth_router = build_oauth_router(cfg, store, authorization_approval_handler)
 
     # Compose: OAuth routes first, then MCP app (protected by middleware)
     protected_mcp = MCPAuthMiddleware(mcp_app, cfg, store)

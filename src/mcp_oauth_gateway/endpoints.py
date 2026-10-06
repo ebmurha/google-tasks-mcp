@@ -11,9 +11,12 @@ Implements:
 import base64
 import hashlib
 import html
+import inspect
 import json
 import time
 import urllib.parse
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Optional
 
 from starlette.requests import Request
@@ -22,6 +25,23 @@ from starlette.routing import Route, Router
 
 from .config import GatewayConfig, well_known_url
 from .store import TokenStore
+
+
+@dataclass(frozen=True)
+class AuthorizationRequest:
+    client_id: str
+    redirect_uri: str
+    state: str
+    code_challenge: str
+    code_challenge_method: str
+    resource: str
+    issuer: str
+
+
+AuthorizationApprovalHandler = Callable[
+    [AuthorizationRequest],
+    Response | Awaitable[Response | None] | None,
+]
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -171,7 +191,7 @@ def _pkce_verify(verifier: str, challenge: str) -> bool:
     return computed == challenge
 
 
-def _authorization_redirect(
+def authorization_redirect(
     redirect_uri: str,
     *,
     issuer: str,
@@ -222,7 +242,11 @@ def _client_display_name(store: TokenStore, client_id: str) -> str:
 # Router factory
 # ---------------------------------------------------------------------------
 
-def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
+def build_oauth_router(
+    cfg: GatewayConfig,
+    store: TokenStore,
+    authorization_approval_handler: AuthorizationApprovalHandler | None = None,
+) -> Router:
     issuer_path = cfg.issuer_path
     authorize_path = f"{issuer_path}/authorize"
     token_path = f"{issuer_path}/token"
@@ -280,17 +304,17 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
                           status=401)
 
         if response_type != "code":
-            return _authorization_redirect(
+            return authorization_redirect(
                 redirect_uri, issuer=cfg.issuer, state=state,
                 error="unsupported_response_type", description="Only 'code' is supported",
             )
         if resource != cfg.resource:
-            return _authorization_redirect(
+            return authorization_redirect(
                 redirect_uri, issuer=cfg.issuer, state=state,
                 error="invalid_target", description="resource must identify this MCP server",
             )
         if not code_challenge or code_challenge_method != "S256":
-            return _authorization_redirect(
+            return authorization_redirect(
                 redirect_uri, issuer=cfg.issuer, state=state,
                 error="invalid_request", description="PKCE S256 is required",
             )
@@ -324,22 +348,22 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
         if not _validate_client_and_redirect(cfg, store, client_id, redirect_uri):
             return _error("unauthorized_client", "client_id or redirect_uri not recognised", 401)
         if resource != cfg.resource:
-            return _authorization_redirect(
+            return authorization_redirect(
                 redirect_uri, issuer=cfg.issuer, state=state,
                 error="invalid_target", description="resource must identify this MCP server",
             )
         if not code_challenge or code_challenge_method != "S256":
-            return _authorization_redirect(
+            return authorization_redirect(
                 redirect_uri, issuer=cfg.issuer, state=state,
                 error="invalid_request", description="PKCE S256 is required",
             )
         if decision == "deny":
-            return _authorization_redirect(
+            return authorization_redirect(
                 redirect_uri, issuer=cfg.issuer, state=state,
                 error="access_denied", description="The user denied the request",
             )
         if decision != "approve":
-            return _authorization_redirect(
+            return authorization_redirect(
                 redirect_uri, issuer=cfg.issuer, state=state,
                 error="invalid_request", description="Unknown authorization decision",
             )
@@ -356,9 +380,25 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
                     error_block='<p class="err">Incorrect password. Try again.</p>',
                     status=401)
 
+        authorization = AuthorizationRequest(
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            state=state,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+            resource=resource,
+            issuer=cfg.issuer,
+        )
+        if authorization_approval_handler is not None:
+            handled = authorization_approval_handler(authorization)
+            if inspect.isawaitable(handled):
+                handled = await handled
+            if handled is not None:
+                return handled
+
         code = store.issue_code(client_id, redirect_uri, code_challenge or None, resource,
                                 cfg.auth_code_ttl)
-        return _authorization_redirect(
+        return authorization_redirect(
             redirect_uri, issuer=cfg.issuer, state=state, code=code,
         )
 

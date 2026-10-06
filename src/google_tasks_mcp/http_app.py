@@ -14,15 +14,20 @@ from urllib.parse import urlsplit
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, Response
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from mcp_oauth_gateway import add_mcp_oauth_gateway
+from mcp_oauth_gateway import (
+    AuthorizationRequest,
+    TokenStore,
+    add_mcp_oauth_gateway,
+    authorization_redirect,
+)
 
 from . import db
 from .account import DEFAULT_ACCOUNT_ID, reset_current_account_id, set_current_account_id
-from .auth import authorization_url, build_authorization_flow, exchange_code
+from .auth import authorization_url, build_authorization_flow, exchange_code, get_credentials
 from .config import Settings, get_settings
 from .errors import AuthRequired, ConfigError
 from .healthcheck import health_path_for_issuer
@@ -31,6 +36,7 @@ from .server import create_mcp_server
 
 LOGGER = logging.getLogger(__name__)
 GOOGLE_OAUTH_STATE_TTL_SECONDS = 600
+MCP_AUTH_CODE_TTL_SECONDS = 300
 GOOGLE_OAUTH_ONBOARDING_PATH = "/google/oauth"
 GOOGLE_OAUTH_CALLBACK_PATH = "/callback"
 
@@ -158,28 +164,106 @@ async def google_oauth_onboarding(request: Request) -> HTMLResponse:
     )
 
 
-async def callback(request: Request) -> HTMLResponse:
+def start_chained_google_oauth(
+    authorization: AuthorizationRequest,
+) -> Response | None:
+    try:
+        get_credentials(DEFAULT_ACCOUNT_ID)
+    except AuthRequired:
+        settings = get_settings()
+        state = secrets.token_urlsafe(32)
+        db.save_google_oauth_state(
+            state,
+            account_id=DEFAULT_ACCOUNT_ID,
+            callback_uri=settings.google_redirect_uri,
+            expires_at=int(time.time()) + GOOGLE_OAUTH_STATE_TTL_SECONDS,
+            pending_mcp_authorization=db.PendingMcpAuthorization(
+                client_id=authorization.client_id,
+                redirect_uri=authorization.redirect_uri,
+                resource=authorization.resource,
+                code_challenge=authorization.code_challenge,
+                code_challenge_method=authorization.code_challenge_method,
+                state=authorization.state,
+                issuer=authorization.issuer,
+            ),
+        )
+        flow = build_authorization_flow(settings, state=state)
+        return RedirectResponse(
+            authorization_url(flow, state=state),
+            status_code=302,
+        )
+    return None
+
+
+def _pending_mcp_error(
+    pending: db.PendingMcpAuthorization,
+    *,
+    error: str,
+    description: str,
+) -> RedirectResponse:
+    return authorization_redirect(
+        pending.redirect_uri,
+        issuer=pending.issuer,
+        state=pending.state,
+        error=error,
+        description=description,
+    )
+
+
+async def callback(
+    request: Request,
+    *,
+    mcp_token_store: TokenStore | None = None,
+    mcp_issuer: str | None = None,
+    mcp_resource: str | None = None,
+    mcp_auth_code_ttl: int = MCP_AUTH_CODE_TTL_SECONDS,
+) -> Response:
     try:
         settings = get_settings()
     except ConfigError:
         settings = None
-    if settings is not None and _hosted_google_oauth_enabled(settings):
-        state = request.query_params.get("state", "")
+    state = request.query_params.get("state", "")
+    state_record = None
+    if settings is not None and state:
+        state_record = db.consume_google_oauth_state(
+            state,
+            callback_uri=settings.google_redirect_uri,
+        )
+
+    hosted_or_chained = settings is not None and (
+        _hosted_google_oauth_enabled(settings)
+        or (mcp_token_store is not None and bool(state))
+    )
+    if hosted_or_chained:
         if not state:
             return _hosted_html(
                 "<h1>Authorization failed</h1><p>OAuth state is missing.</p>",
                 status=400,
             )
-        state_record = db.consume_google_oauth_state(
-            state,
-            callback_uri=settings.google_redirect_uri,
-        )
         if state_record is None:
             return _hosted_html(
                 "<h1>Authorization failed</h1><p>OAuth state is invalid, expired, or already used.</p>",
                 status=400,
             )
+        pending = state_record.pending_mcp_authorization
+        if pending is not None and (
+            mcp_token_store is None
+            or pending.issuer != mcp_issuer
+            or pending.resource != mcp_resource
+            or pending.code_challenge_method != "S256"
+        ):
+            return _pending_mcp_error(
+                pending,
+                error="server_error",
+                description="The MCP authorization transaction could not be resumed",
+            )
         if request.query_params.get("error"):
+            if pending is not None:
+                return _pending_mcp_error(
+                    pending,
+                    error="access_denied",
+                    description="Google authorization was denied",
+                )
             return _hosted_html(
                 "<h1>Google authorization was denied</h1>"
                 "<p>No Google credentials were changed. Start again when ready.</p>",
@@ -187,6 +271,12 @@ async def callback(request: Request) -> HTMLResponse:
             )
         code = request.query_params.get("code", "")
         if not code:
+            if pending is not None:
+                return _pending_mcp_error(
+                    pending,
+                    error="server_error",
+                    description="Google did not return an authorization code",
+                )
             return _hosted_html(
                 "<h1>Authorization failed</h1><p>Google did not return an authorization code.</p>",
                 status=400,
@@ -195,10 +285,31 @@ async def callback(request: Request) -> HTMLResponse:
             flow = build_authorization_flow(settings, state=state)
             exchange_code(code, flow=flow, account_id=state_record.account_id)
         except AuthRequired:
+            if pending is not None:
+                return _pending_mcp_error(
+                    pending,
+                    error="server_error",
+                    description="Google authorization could not be completed",
+                )
             return _hosted_html(
                 "<h1>Authorization failed</h1>"
                 "<p>The code could not be exchanged. Start a new authorization.</p>",
                 status=400,
+            )
+        if pending is not None:
+            assert mcp_token_store is not None
+            mcp_code = mcp_token_store.issue_code(
+                pending.client_id,
+                pending.redirect_uri,
+                pending.code_challenge,
+                pending.resource,
+                mcp_auth_code_ttl,
+            )
+            return authorization_redirect(
+                pending.redirect_uri,
+                issuer=pending.issuer,
+                state=pending.state,
+                code=mcp_code,
             )
         return _hosted_html(
             "<h1>Google account connected</h1>"
@@ -231,6 +342,9 @@ def _build_starlette_app(
     *,
     mcp_path: str = "/mcp",
     health_path: str = "/healthz",
+    mcp_token_store: TokenStore | None = None,
+    mcp_issuer: str | None = None,
+    mcp_resource: str | None = None,
 ) -> Starlette:
     try:
         settings = get_settings()
@@ -252,6 +366,15 @@ def _build_starlette_app(
     mcp_server = create_mcp_server()
     mcp_app = mcp_server.streamable_http_app()
     mcp_route = next(route for route in mcp_app.routes if getattr(route, "path", None) == "/mcp")
+
+    async def google_oauth_callback(request: Request) -> Response:
+        return await callback(
+            request,
+            mcp_token_store=mcp_token_store,
+            mcp_issuer=mcp_issuer,
+            mcp_resource=mcp_resource,
+        )
+
     routes = [
         Route(health_path, healthz, methods=["GET"]),
         Route(
@@ -259,7 +382,7 @@ def _build_starlette_app(
             google_oauth_onboarding,
             methods=["GET", "POST"],
         ),
-        Route(callback_path, callback, methods=["GET"]),
+        Route(callback_path, google_oauth_callback, methods=["GET"]),
         Route(mcp_path, endpoint=mcp_route.endpoint),
     ]
     return Starlette(
@@ -282,22 +405,35 @@ def create_app() -> ASGIApp:
     redirect_uris = [u.strip() for u in raw_uris.split(",") if u.strip()]
     issuer = os.environ["MCP_OAUTH_ISSUER"].rstrip("/")
     resource = os.environ.get("MCP_OAUTH_RESOURCE", f"{issuer}/mcp").rstrip("/")
+    signing_secret = os.environ["MCP_OAUTH_SIGNING_SECRET"]
     resource_path = _configured_path(resource, "/mcp")
     health_path = health_path_for_issuer(issuer)
+    token_store = TokenStore(
+        signing_secret,
+        issuer=issuer,
+        refresh_backend=db.McpOAuthRefreshTokenBackend(),
+        client_backend=db.McpOAuthClientBackend(),
+    )
     return add_mcp_oauth_gateway(
-        _build_starlette_app(mcp_path=resource_path, health_path=health_path),
+        _build_starlette_app(
+            mcp_path=resource_path,
+            health_path=health_path,
+            mcp_token_store=token_store,
+            mcp_issuer=issuer,
+            mcp_resource=resource,
+        ),
         issuer=issuer,
         resource=resource,
         client_id=os.environ["MCP_OAUTH_CLIENT_ID"],
         client_secret=os.environ["MCP_OAUTH_CLIENT_SECRET"],
-        signing_secret=os.environ["MCP_OAUTH_SIGNING_SECRET"],
+        signing_secret=signing_secret,
         admin_password=os.environ.get("MCP_OAUTH_ADMIN_PASSWORD"),
         static_bearer_token=os.environ.get("MCP_BEARER_TOKEN"),
         bearer_token_resolver=resolve_bearer_token_account,
         set_account_context=set_current_account_id,
         reset_account_context=reset_current_account_id,
-        refresh_token_backend=db.McpOAuthRefreshTokenBackend(),
-        client_backend=db.McpOAuthClientBackend(),
+        authorization_approval_handler=start_chained_google_oauth,
+        token_store=token_store,
         mcp_path_prefix=resource_path,
         allowed_redirect_uris=redirect_uris,
         enable_dcr=os.environ.get("MCP_OAUTH_ENABLE_DCR", "").strip().lower()
