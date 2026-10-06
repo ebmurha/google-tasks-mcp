@@ -89,7 +89,10 @@ def test_authorize_get_shows_consent(app):
     assert "MCP client" in r.text
     assert "Claude" not in r.text
     assert f'<form method="POST" action="{ISSUER}/authorize">' in r.text
-    assert f"form-action {ISSUER}/authorize" in r.headers["content-security-policy"]
+    assert (
+        f"form-action {ISSUER}/authorize {REDIRECT_URI}"
+        in r.headers["content-security-policy"]
+    )
 
 
 def test_full_authorization_code_flow(app):
