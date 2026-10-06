@@ -138,9 +138,7 @@ def _consent_response(
 ) -> HTMLResponse:
     authorization_endpoint = f"{issuer.rstrip('/')}/authorize"
     # form-action is enforced across redirects, so the validated OAuth callback
-    # origin must be allowed for the authorization response redirect.
-    callback = urllib.parse.urlsplit(redirect_uri)
-    callback_origin = f"{callback.scheme}://{callback.netloc}"
+    # URI must be allowed for the authorization response redirect.
     rendered = template.format(
         state=html.escape(state, quote=True),
         client_id=html.escape(client_id, quote=True),
@@ -158,7 +156,7 @@ def _consent_response(
         headers={
             "Content-Security-Policy": (
                 "default-src 'none'; style-src 'unsafe-inline'; "
-                f"form-action {authorization_endpoint} {callback_origin}; "
+                f"form-action {authorization_endpoint} {redirect_uri}; "
                 "base-uri 'none'; frame-ancestors 'none'"
             ),
             "Cache-Control": "no-store",

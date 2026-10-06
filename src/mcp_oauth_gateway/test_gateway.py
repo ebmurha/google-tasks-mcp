@@ -90,7 +90,7 @@ def test_authorize_get_shows_consent(app):
     assert "Claude" not in r.text
     assert f'<form method="POST" action="{ISSUER}/authorize">' in r.text
     assert (
-        f"form-action {ISSUER}/authorize https://claude.ai"
+        f"form-action {ISSUER}/authorize {REDIRECT_URI}"
         in r.headers["content-security-policy"]
     )
 

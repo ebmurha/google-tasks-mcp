@@ -82,7 +82,13 @@ def test_browser_allows_consent_post_and_callback_redirect(issuer_path: str):
             browser = playwright.chromium.launch(channel="chrome", headless=True)
             try:
                 page = browser.new_page()
-                page.goto(f"{issuer}/authorize")
+                consent_response = page.goto(f"{issuer}/authorize")
+                assert consent_response is not None
+                assert consent_response.headers["content-security-policy"] == (
+                    "default-src 'none'; style-src 'unsafe-inline'; "
+                    f"form-action {issuer}/authorize {callback_url}; "
+                    "base-uri 'none'; frame-ancestors 'none'"
+                )
                 page.get_by_role("button", name="Approve access").click()
                 page.wait_for_url(f"{callback_url}?state=browser-state")
                 assert page.get_by_text("OAuth callback reached").is_visible()

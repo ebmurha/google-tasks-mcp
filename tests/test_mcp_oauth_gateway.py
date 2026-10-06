@@ -245,7 +245,7 @@ def test_consent_html_escapes_oauth_parameters_and_sets_csp(configured_env, monk
     injected_state = 'x" autofocus onfocus="alert(1)'
     expected_csp = (
         f"default-src 'none'; style-src 'unsafe-inline'; form-action {ISSUER}/authorize "
-        "https://chatgpt.com; "
+        f"{REDIRECT_URI}; "
         "base-uri 'none'; frame-ancestors 'none'"
     )
 
