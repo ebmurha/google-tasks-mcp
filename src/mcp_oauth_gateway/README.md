@@ -59,7 +59,7 @@ python -c "import secrets; print('MCP_OAUTH_SIGNING_SECRET=' + secrets.token_hex
 **3. Set environment variables** in systemd / `.env.secrets`:
 
 ```ini
-MCP_OAUTH_ISSUER=https://zoe-tasks.riseos.work
+MCP_OAUTH_ISSUER=https://tasks.example.com
 MCP_OAUTH_CLIENT_ID=claude-connector
 MCP_OAUTH_CLIENT_SECRET=<from step 2>
 MCP_OAUTH_SIGNING_SECRET=<from step 2>
@@ -75,15 +75,15 @@ sudo systemctl restart google-tasks-mcp
 **5. Verify the discovery endpoint**:
 
 ```bash
-curl https://zoe-tasks.riseos.work/.well-known/oauth-authorization-server | jq .
+curl https://tasks.example.com/.well-known/oauth-authorization-server | jq .
 ```
 
 Expected response:
 ```json
 {
-  "issuer": "https://zoe-tasks.riseos.work",
-  "authorization_endpoint": "https://zoe-tasks.riseos.work/authorize",
-  "token_endpoint": "https://zoe-tasks.riseos.work/token",
+  "issuer": "https://tasks.example.com",
+  "authorization_endpoint": "https://tasks.example.com/authorize",
+  "token_endpoint": "https://tasks.example.com/token",
   "response_types_supported": ["code"],
   "code_challenge_methods_supported": ["S256"]
 }
@@ -95,7 +95,7 @@ Expected response:
 
 1. Go to **Settings → Connectors → Add custom connector**
 2. **Server name**: Google Tasks
-3. **URL**: `https://zoe-tasks.riseos.work/mcp`
+3. **URL**: `https://tasks.example.com/mcp`
 4. Open **Advanced settings**:
    - **OAuth Client ID**: `claude-connector`  (your `MCP_OAUTH_CLIENT_ID`)
    - **OAuth Client Secret**: `<your MCP_OAUTH_CLIENT_SECRET>`

@@ -198,6 +198,11 @@ OAuth 2.0 gateway mode is optional. Enable it when your HTTP MCP client supports
 - OAuth client secrets and refresh tokens are stored only by hash. Registered
   clients and rotating refresh tokens survive restarts when `DB_PATH` is durable.
 
+The public proxy URL, MCP OAuth issuer/resource, and Google OAuth callback are
+operator-controlled deployment settings. They may be changed independently.
+The server does not require a particular hostname or derive these choices from
+an owner-specific URL.
+
 Leave `MCP_OAUTH_REDIRECT_URIS` empty to keep OAuth gateway mode disabled.
 
 ## Tools

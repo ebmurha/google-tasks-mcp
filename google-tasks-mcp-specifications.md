@@ -90,6 +90,13 @@ Logs, tests, docs, and MCP responses must not print raw bearer tokens except for
 
 ## MCP OAuth Gateway Rules
 
+The reverse-proxy address, MCP OAuth issuer and protected-resource URL, and
+Google OAuth callback are operator-controlled runtime or deployment
+configuration. The server must not hard-code an owner hostname or require
+these independently chosen values to be derived from one another. Changing
+them may require restarting or reprovisioning the deployment, but never an
+application source edit or rebuild.
+
 When OAuth gateway mode is enabled, unauthenticated `/mcp` requests must return
 401 and include a `WWW-Authenticate` header whose `resource_metadata` value
 points to RFC 9728 protected-resource metadata. That metadata identifies the
