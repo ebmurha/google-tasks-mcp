@@ -18,6 +18,10 @@ All notable changes to this project will be documented in this file.
   cannot replace a token stored through hosted onboarding.
 - Existing static bearer-token access remains available. MCP tool names, inputs, and response shapes are unchanged.
 
+### Fixed
+- End the MCP consent form submission before continuing into Google OAuth so
+  restrictive `form-action` CSP does not block chained Connect or Reconnect.
+
 ## [0.4.0] - 2026-05-21
 
 ### Added

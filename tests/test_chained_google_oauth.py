@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import re
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -50,6 +51,12 @@ def _approve(client: TestClient, issuer: str, resource: str):
     )
 
 
+def _google_state(response) -> str:
+    match = re.search(r"https://google\.example/authorize\?state=([A-Za-z0-9_-]+)", response.text)
+    assert match is not None
+    return match.group(1)
+
+
 @pytest.mark.parametrize("issuer_path", ["", "/team"])
 def test_connect_chains_google_and_resumes_after_restart(
     configured_env, monkeypatch, issuer_path
@@ -69,8 +76,13 @@ def test_connect_chains_google_and_resumes_after_restart(
 
     with TestClient(http_app.create_app()) as client:
         google_redirect = _approve(client, issuer, resource)
-    assert google_redirect.status_code == 302
-    google_state = parse_qs(urlparse(google_redirect.headers["location"]).query)["state"][0]
+    assert google_redirect.status_code == 200
+    assert "location" not in google_redirect.headers
+    assert "http-equiv=\"refresh\"" in google_redirect.text
+    assert google_redirect.headers["content-security-policy"] == (
+        "default-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    )
+    google_state = _google_state(google_redirect)
     with db._connect() as conn:
         row = conn.execute(
             "SELECT state_hash, mcp_client_id, mcp_redirect_uri, mcp_resource, "
@@ -153,7 +165,7 @@ def test_google_denial_returns_client_error_without_mcp_code(
     )
     with TestClient(http_app.create_app()) as client:
         started = _approve(client, issuer, resource)
-        state = parse_qs(urlparse(started.headers["location"]).query)["state"][0]
+        state = _google_state(started)
         denied = client.get(
             urlparse(callback).path,
             params={"state": state, "error": "access_denied"},
