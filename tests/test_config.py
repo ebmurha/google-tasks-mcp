@@ -16,6 +16,58 @@ def test_settings_loads_from_env(configured_env):
     assert settings.google_redirect_uri == "http://localhost:8787/callback"
     assert settings.mcp_bearer_token == "bearer-token"
     assert settings.db_path == configured_env / "test.db"
+    assert settings.google_oauth_onboarding_url is None
+    assert settings.google_oauth_setup_secret is None
+
+
+def test_hosted_google_oauth_settings_must_be_configured_together(
+    configured_env, monkeypatch
+):
+    monkeypatch.setenv("GOOGLE_OAUTH_ONBOARDING_URL", "https://tasks.example/setup/google")
+    reset_settings_cache()
+
+    with pytest.raises(ConfigError, match="must be set together"):
+        get_settings()
+
+    monkeypatch.setenv("GOOGLE_OAUTH_SETUP_SECRET", "operator-secret")
+    reset_settings_cache()
+    settings = get_settings()
+
+    assert settings.google_oauth_onboarding_url == "https://tasks.example/setup/google"
+    assert settings.google_oauth_setup_secret == "operator-secret"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://operator-secret@tasks.example/setup",
+        "https://tasks.example/setup?secret=value",
+        "https://tasks.example/setup#fragment",
+        "not-a-url",
+    ],
+)
+def test_hosted_google_oauth_url_rejects_credential_bearing_forms(
+    configured_env, monkeypatch, url
+):
+    monkeypatch.setenv("GOOGLE_OAUTH_ONBOARDING_URL", url)
+    monkeypatch.setenv("GOOGLE_OAUTH_SETUP_SECRET", "operator-secret")
+    reset_settings_cache()
+
+    with pytest.raises(ConfigError):
+        get_settings()
+
+
+def test_hosted_google_oauth_url_requires_https_off_loopback(
+    configured_env, monkeypatch
+):
+    monkeypatch.setenv(
+        "GOOGLE_OAUTH_ONBOARDING_URL", "http://tasks.example/setup/google"
+    )
+    monkeypatch.setenv("GOOGLE_OAUTH_SETUP_SECRET", "operator-secret")
+    reset_settings_cache()
+
+    with pytest.raises(ConfigError, match="must use HTTPS"):
+        get_settings()
 
 
 def test_oauth_json_used_when_env_credentials_missing(monkeypatch, tmp_path):

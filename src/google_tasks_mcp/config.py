@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -41,6 +42,8 @@ class Settings:
     default_tasklist: str | None = None
     oauth_keys_path: Path = Path(DEFAULT_OAUTH_KEYS_PATH)
     oauth_client_source: str = "env"
+    google_oauth_onboarding_url: str | None = None
+    google_oauth_setup_secret: str | None = None
 
     def client_config(self) -> dict[str, Any]:
         return {
@@ -153,6 +156,40 @@ def get_settings(*, require_bearer_token: bool = False) -> Settings:
     if require_bearer_token:
         bearer_token = _required("MCP_BEARER_TOKEN", bearer_token)
 
+    onboarding_url = _clean(os.getenv("GOOGLE_OAUTH_ONBOARDING_URL"))
+    setup_secret = _clean(os.getenv("GOOGLE_OAUTH_SETUP_SECRET"))
+    if bool(onboarding_url) != bool(setup_secret):
+        raise ConfigError(
+            "GOOGLE_OAUTH_ONBOARDING_URL and GOOGLE_OAUTH_SETUP_SECRET must be set together"
+        )
+    if onboarding_url and setup_secret:
+        try:
+            parsed_onboarding_url = urlsplit(onboarding_url)
+        except ValueError as exc:
+            raise ConfigError("GOOGLE_OAUTH_ONBOARDING_URL must be a valid HTTP(S) URL") from exc
+        if (
+            parsed_onboarding_url.scheme not in {"http", "https"}
+            or not parsed_onboarding_url.netloc
+            or parsed_onboarding_url.username
+            or parsed_onboarding_url.password
+            or parsed_onboarding_url.query
+            or parsed_onboarding_url.fragment
+            or any(character.isspace() for character in onboarding_url)
+        ):
+            raise ConfigError(
+                "GOOGLE_OAUTH_ONBOARDING_URL must be an absolute HTTP(S) URL "
+                "without credentials, query, fragment, or whitespace"
+            )
+        if (
+            parsed_onboarding_url.scheme != "https"
+            and parsed_onboarding_url.hostname not in {"localhost", "127.0.0.1", "::1"}
+        ):
+            raise ConfigError(
+                "GOOGLE_OAUTH_ONBOARDING_URL must use HTTPS except on loopback hosts"
+            )
+        if setup_secret in onboarding_url:
+            raise ConfigError("GOOGLE_OAUTH_ONBOARDING_URL must not contain the setup secret")
+
     return Settings(
         google_client_id=client_id,
         google_client_secret=client_secret,
@@ -165,6 +202,8 @@ def get_settings(*, require_bearer_token: bool = False) -> Settings:
         default_tasklist=_clean(os.getenv("DEFAULT_TASKLIST")),
         oauth_keys_path=oauth_keys_path,
         oauth_client_source=oauth_source,
+        google_oauth_onboarding_url=onboarding_url,
+        google_oauth_setup_secret=setup_secret,
     )
 
 

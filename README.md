@@ -28,11 +28,10 @@ For deeper hosting and distribution guidance, see [MCP_SERVER_GUIDE.md](./MCP_SE
 ### Container persistence
 
 For a bearer-only single-account HTTP deployment whose filesystem is recreated on startup,
-set `GOOGLE_REFRESH_TOKEN` as a secret environment variable alongside the
-Google OAuth client settings. HTTP startup writes that token into the configured
-SQLite database before accepting requests. Keep it in the hosting provider's
-secret store; do not put it in a start command or Docker build argument. Hosts
-that provide `PORT` can use it when `BIND_PORT` is unset.
+`GOOGLE_REFRESH_TOKEN` can seed an empty SQLite database. It never overwrites an
+existing token. Keep it in the hosting provider's secret store; do not put it
+in a start command or Docker build argument. Hosts that provide `PORT` can use
+it when `BIND_PORT` is unset.
 
 OAuth gateway deployments also persist dynamically registered clients and MCP
 refresh-token hashes. Configure the image's Litestream variables to restore and
@@ -97,6 +96,29 @@ If the Google OAuth app is in Testing mode, add every Google account you bootstr
 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_OAUTH_KEYS_PATH` identify the Google Cloud OAuth app, not the Google Tasks user account. One OAuth client JSON can be reused for several Google users. Each bootstrap run stores a separate refresh token for the Google account you authorize in the browser.
 
 ## Bootstrap Google OAuth
+
+### Hosted HTTP onboarding
+
+For a hosted server, set these independently chosen values:
+
+```env
+GOOGLE_REDIRECT_URI=https://your-domain.example/callback
+GOOGLE_OAUTH_ONBOARDING_URL=https://your-domain.example/google/oauth
+GOOGLE_OAUTH_SETUP_SECRET=generate-a-long-random-operator-password
+```
+
+Route both public URLs to this application. The onboarding URL may use any
+hostname or path supported by your proxy; it is not derived from the MCP OAuth
+issuer or resource. The displayed onboarding link never contains the setup
+secret.
+
+Open `GOOGLE_OAUTH_ONBOARDING_URL`, enter the operator setup password, continue
+to Google, and approve access. The server validates durable single-use state,
+exchanges the code, and stores the Google token directly in SQLite. No token is
+displayed or copied. If an authenticated MCP tool finds no usable Google token,
+its error includes the same safe onboarding URL.
+
+### Local and recovery CLI
 
 Run this once per Google account you want the server to access:
 
@@ -203,6 +225,11 @@ operator-controlled deployment settings. They may be changed independently.
 The server does not require a particular hostname or derive these choices from
 an owner-specific URL.
 
+MCP OAuth authenticates the client to this server. Google OAuth independently
+authorizes this server to call Google Tasks. Hosted deployments can use the
+operator onboarding URL above; connecting an MCP client never grants permission
+to replace the server's Google account.
+
 Leave `MCP_OAUTH_REDIRECT_URIS` empty to keep OAuth gateway mode disabled.
 
 ## Tools
@@ -266,7 +293,8 @@ Callback URI mismatch:
 
 Expired or revoked Google refresh token:
 
-- Run `google-tasks-mcp-bootstrap` again for the affected account.
+- For hosted HTTP, open `GOOGLE_OAUTH_ONBOARDING_URL` and reconnect Google.
+- For local or recovery use, run `google-tasks-mcp-bootstrap` again.
 - For multi-account mode, include the same `--account-id` you used before.
 
 OAuth MCP client keeps re-authorizing:

@@ -5,7 +5,8 @@ from datetime import date
 import pytest
 
 from google_tasks_mcp import server
-from google_tasks_mcp.errors import AmbiguousTitleError, InvalidInputError, NotFoundError
+from google_tasks_mcp.config import reset_settings_cache
+from google_tasks_mcp.errors import AuthRequired, AmbiguousTitleError, InvalidInputError, NotFoundError
 
 
 @pytest.fixture
@@ -1073,3 +1074,20 @@ def test_error_payload_for_structured_errors():
         "message": "Invalid timezone: Bad/TZ",
         "timezone": "Bad/TZ",
     }
+
+
+def test_auth_required_uses_safe_hosted_onboarding_url(configured_env, monkeypatch):
+    monkeypatch.setenv(
+        "GOOGLE_OAUTH_ONBOARDING_URL", "https://tasks.example/setup/google"
+    )
+    monkeypatch.setenv("GOOGLE_OAUTH_SETUP_SECRET", "operator-secret")
+    reset_settings_cache()
+
+    payload = server._error_payload(AuthRequired("Google account is not connected"))
+
+    assert payload == {
+        "error": "Google account is not connected",
+        "hint": "Connect or reconnect the server's Google account",
+        "onboarding_url": "https://tasks.example/setup/google",
+    }
+    assert "operator-secret" not in str(payload)

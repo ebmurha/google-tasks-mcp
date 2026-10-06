@@ -41,6 +41,14 @@ class BearerToken:
     updated_at: int
 
 
+@dataclass(frozen=True)
+class GoogleOAuthState:
+    account_id: str
+    callback_uri: str
+    expires_at: int
+    consumed_at: int
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS oauth_token (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -98,6 +106,15 @@ CREATE TABLE IF NOT EXISTS mcp_oauth_clients (
     metadata_json TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS google_oauth_states (
+    state_hash TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    callback_uri TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    consumed_at INTEGER,
+    created_at INTEGER NOT NULL
 );
 """
 
@@ -209,6 +226,70 @@ def save_token(
                 """,
                 (refresh, access, expires_at, scope, updated_at),
             )
+
+
+def _google_oauth_state_hash(state: str) -> str:
+    return hashlib.sha256(state.encode("utf-8")).hexdigest()
+
+
+def save_google_oauth_state(
+    state: str,
+    *,
+    account_id: str,
+    callback_uri: str,
+    expires_at: int,
+) -> None:
+    init_db()
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO google_oauth_states (
+                state_hash, account_id, callback_uri, expires_at, consumed_at, created_at
+            )
+            VALUES (?, ?, ?, ?, NULL, ?)
+            """,
+            (
+                _google_oauth_state_hash(state),
+                _account_id(account_id),
+                callback_uri,
+                expires_at,
+                _now(),
+            ),
+        )
+
+
+def consume_google_oauth_state(
+    state: str,
+    *,
+    callback_uri: str,
+) -> GoogleOAuthState | None:
+    init_db()
+    now = _now()
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            UPDATE google_oauth_states
+            SET consumed_at = ?
+            WHERE state_hash = ?
+              AND callback_uri = ?
+              AND expires_at >= ?
+              AND consumed_at IS NULL
+            RETURNING account_id, callback_uri, expires_at, consumed_at
+            """,
+            (now, _google_oauth_state_hash(state), callback_uri, now),
+        ).fetchone()
+        conn.execute(
+            "DELETE FROM google_oauth_states WHERE expires_at < ?",
+            (now,),
+        )
+    if row is None:
+        return None
+    return GoogleOAuthState(
+        account_id=row["account_id"],
+        callback_uri=row["callback_uri"],
+        expires_at=row["expires_at"],
+        consumed_at=row["consumed_at"],
+    )
 
 
 def update_access_token(access: str, expires_at: int, *, account_id: str | None = None) -> None:

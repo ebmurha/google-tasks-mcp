@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from google_tasks_mcp import __main__ as server_entrypoint
+from google_tasks_mcp import db
 from scripts import bootstrap_oauth, create_bearer_token, set_refresh_token
 
 
@@ -44,3 +45,19 @@ def test_http_startup_bootstraps_refresh_token_from_environment(configured_env, 
 
     set_token.assert_called_once_with("synthetic-refresh-token")
     uvicorn.run.assert_called_once()
+
+
+def test_http_startup_does_not_overwrite_existing_google_token(
+    configured_env, monkeypatch
+):
+    db.save_token("stored-refresh-token", None, 0, "scope")
+    monkeypatch.setenv("GOOGLE_REFRESH_TOKEN", "stale-environment-token")
+    uvicorn = SimpleNamespace(run=Mock())
+    with patch.dict("sys.modules", {"uvicorn": uvicorn}), patch(
+        "google_tasks_mcp.__main__.set_refresh_token"
+    ) as set_token:
+        assert server_entrypoint.main(["--transport", "http"]) == 0
+
+    set_token.assert_not_called()
+    assert db.get_token() is not None
+    assert db.get_token().refresh_token == "stored-refresh-token"
