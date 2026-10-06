@@ -38,11 +38,11 @@ def _pkce_pair() -> tuple[str, str]:
     return verifier, challenge
 
 
-def _register(client: TestClient) -> tuple[str, str]:
+def _register(client: TestClient, client_name: str = "ChatGPT") -> tuple[str, str]:
     response = client.post(
         "/register",
         json={
-            "client_name": "ChatGPT",
+            "client_name": client_name,
             "redirect_uris": [REDIRECT_URI],
             "grant_types": ["authorization_code", "refresh_token"],
             "response_types": ["code"],
@@ -244,7 +244,7 @@ def test_consent_html_escapes_oauth_parameters_and_sets_csp(configured_env, monk
     _, challenge = _pkce_pair()
     injected_state = 'x" autofocus onfocus="alert(1)'
     expected_csp = (
-        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
+        f"default-src 'none'; style-src 'unsafe-inline'; form-action {ISSUER}/authorize; "
         "base-uri 'none'; frame-ancestors 'none'"
     )
 
@@ -293,8 +293,62 @@ def test_consent_html_escapes_oauth_parameters_and_sets_csp(configured_env, monk
 
     for response in (autoapprove, consent, retry):
         assert response.headers["content-security-policy"] == expected_csp
+        assert f'<form method="POST" action="{ISSUER}/authorize">' in response.text
         assert 'value="x" autofocus onfocus="alert(1)"' not in response.text
         assert 'value="x&quot; autofocus onfocus=&quot;alert(1)"' in response.text
+
+
+def test_consent_uses_safely_escaped_registered_client_name(configured_env, monkeypatch):
+    _configure(monkeypatch)
+    _, challenge = _pkce_pair()
+    malicious_name = 'Other Client <img src=x onerror="alert(1)">'
+
+    with TestClient(create_app()) as client:
+        client_id, _ = _register(client, malicious_name)
+        response = client.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": REDIRECT_URI,
+                "state": "state-client-name",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "resource": RESOURCE,
+            },
+        )
+
+    assert response.status_code == 200
+    assert "Claude" not in response.text
+    assert malicious_name not in response.text
+    assert "Other Client &lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in response.text
+
+
+def test_consent_denial_returns_access_denied_and_state(configured_env, monkeypatch):
+    _configure(monkeypatch)
+    _, challenge = _pkce_pair()
+
+    with TestClient(create_app()) as client:
+        denied = client.post(
+            "/authorize",
+            data={
+                "response_type": "code",
+                "client_id": "pre-registered-client",
+                "redirect_uri": REDIRECT_URI,
+                "state": "state-denied",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "resource": RESOURCE,
+                "decision": "deny",
+            },
+            follow_redirects=False,
+        )
+
+    assert denied.status_code == 302
+    params = parse_qs(urlparse(denied.headers["location"]).query)
+    assert params["error"] == ["access_denied"]
+    assert params["state"] == ["state-denied"]
+    assert params["iss"] == [ISSUER]
 
 
 def test_in_memory_tokens_are_consumed_once_under_concurrency():

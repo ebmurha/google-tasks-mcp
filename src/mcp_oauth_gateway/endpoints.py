@@ -33,7 +33,7 @@ CONSENT_HTML = """\
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Authorize Claude Connector</title>
+  <title>Authorize MCP access</title>
   <style>
     body{{font-family:system-ui,sans-serif;max-width:420px;margin:80px auto;padding:0 20px;color:#111}}
     h2{{margin-bottom:8px}}
@@ -45,16 +45,18 @@ CONSENT_HTML = """\
     button{{width:100%;padding:12px;background:#2563eb;color:#fff;border:none;
       border-radius:8px;font-size:15px;cursor:pointer;font-weight:600}}
     button:hover{{background:#1d4ed8}}
+    button.deny{{margin-top:8px;background:#fff;color:#475569;border:1px solid #cbd5e1}}
+    button.deny:hover{{background:#f8fafc}}
     .err{{color:#dc2626;font-size:14px;margin-bottom:12px}}
     .meta{{font-size:12px;color:#94a3b8;margin-top:16px;text-align:center}}
   </style>
 </head>
 <body>
 <div class="card">
-  <h2>Authorize Claude Connector</h2>
-  <p>A Claude.ai connector is requesting access. Enter the admin password to approve.</p>
+  <h2>Authorize MCP access</h2>
+  <p><strong>{client_name}</strong> is requesting access. Enter the admin password to approve.</p>
   {error_block}
-  <form method="POST">
+  <form method="POST" action="{authorization_endpoint}">
     <input type="hidden" name="state"          value="{state}">
     <input type="hidden" name="client_id"      value="{client_id}">
     <input type="hidden" name="redirect_uri"   value="{redirect_uri}">
@@ -64,7 +66,8 @@ CONSENT_HTML = """\
     <input type="hidden" name="response_type"  value="code">
     <label for="pw">Admin password</label>
     <input type="password" id="pw" name="password" autofocus placeholder="password">
-    <button type="submit">Approve access</button>
+    <button type="submit" name="decision" value="approve">Approve access</button>
+    <button class="deny" type="submit" name="decision" value="deny">Deny</button>
   </form>
   <p class="meta">Issuer: {issuer}</p>
 </div>
@@ -77,7 +80,7 @@ AUTOAPPROVE_HTML = """\
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Authorize Claude Connector</title>
+  <title>Authorize MCP access</title>
   <style>
     body{{font-family:system-ui,sans-serif;max-width:420px;margin:80px auto;padding:0 20px;color:#111}}
     .card{{border:1px solid #e2e8f0;border-radius:12px;padding:28px}}
@@ -85,14 +88,16 @@ AUTOAPPROVE_HTML = """\
     button{{width:100%;padding:12px;background:#2563eb;color:#fff;border:none;
       border-radius:8px;font-size:15px;cursor:pointer;font-weight:600}}
     button:hover{{background:#1d4ed8}}
+    button.deny{{margin-top:8px;background:#fff;color:#475569;border:1px solid #cbd5e1}}
+    button.deny:hover{{background:#f8fafc}}
     .meta{{font-size:12px;color:#94a3b8;margin-top:16px;text-align:center}}
   </style>
 </head>
 <body>
 <div class="card">
-  <h2>Authorize Claude Connector</h2>
-  <p>Click approve to grant this Claude connector access.</p>
-  <form method="POST">
+  <h2>Authorize MCP access</h2>
+  <p><strong>{client_name}</strong> is requesting access.</p>
+  <form method="POST" action="{authorization_endpoint}">
     <input type="hidden" name="state"          value="{state}">
     <input type="hidden" name="client_id"      value="{client_id}">
     <input type="hidden" name="redirect_uri"   value="{redirect_uri}">
@@ -100,19 +105,14 @@ AUTOAPPROVE_HTML = """\
     <input type="hidden" name="code_challenge_method" value="S256">
     <input type="hidden" name="resource"       value="{resource}">
     <input type="hidden" name="response_type"  value="code">
-    <button type="submit">Approve access</button>
+    <button type="submit" name="decision" value="approve">Approve access</button>
+    <button class="deny" type="submit" name="decision" value="deny">Deny</button>
   </form>
   <p class="meta">Issuer: {issuer}</p>
 </div>
 </body>
 </html>
 """
-
-CONSENT_CSP = (
-    "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
-    "base-uri 'none'; frame-ancestors 'none'"
-)
-
 
 def _json(data: dict, status: int = 200) -> JSONResponse:
     return JSONResponse(data, status_code=status,
@@ -132,9 +132,11 @@ def _consent_response(
     code_challenge: str,
     resource: str,
     issuer: str,
+    client_name: str,
     error_block: str = "",
     status: int = 200,
 ) -> HTMLResponse:
+    authorization_endpoint = f"{issuer.rstrip('/')}/authorize"
     rendered = template.format(
         state=html.escape(state, quote=True),
         client_id=html.escape(client_id, quote=True),
@@ -142,13 +144,19 @@ def _consent_response(
         code_challenge=html.escape(code_challenge, quote=True),
         resource=html.escape(resource, quote=True),
         issuer=html.escape(issuer, quote=True),
+        client_name=html.escape(client_name, quote=True),
+        authorization_endpoint=html.escape(authorization_endpoint, quote=True),
         error_block=error_block,
     )
     return HTMLResponse(
         rendered,
         status_code=status,
         headers={
-            "Content-Security-Policy": CONSENT_CSP,
+            "Content-Security-Policy": (
+                "default-src 'none'; style-src 'unsafe-inline'; "
+                f"form-action {authorization_endpoint}; "
+                "base-uri 'none'; frame-ancestors 'none'"
+            ),
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
         },
@@ -197,6 +205,15 @@ def _basic_auth(request: Request) -> Optional[tuple]:
         return cid, secret
     except Exception:
         return None
+
+
+def _client_display_name(store: TokenStore, client_id: str) -> str:
+    record = store.get_dcr_client(client_id)
+    if record:
+        name = record.get("client_name")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    return "MCP client"
 
 
 # ---------------------------------------------------------------------------
@@ -276,11 +293,13 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
                 CONSENT_HTML,
                 state=state, client_id=client_id, redirect_uri=redirect_uri,
                 code_challenge=code_challenge, resource=resource,
-                issuer=cfg.issuer, error_block="")
+                issuer=cfg.issuer, client_name=_client_display_name(store, client_id),
+                error_block="")
         return _consent_response(
             AUTOAPPROVE_HTML,
             state=state, client_id=client_id, redirect_uri=redirect_uri,
-            code_challenge=code_challenge, resource=resource, issuer=cfg.issuer)
+            code_challenge=code_challenge, resource=resource, issuer=cfg.issuer,
+            client_name=_client_display_name(store, client_id))
 
     # ---- /authorize POST (form submit) ------------------------------------
 
@@ -293,6 +312,7 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
         code_challenge_method = str(form.get("code_challenge_method", ""))
         resource       = str(form.get("resource", ""))
         password       = str(form.get("password", ""))
+        decision       = str(form.get("decision", "approve"))
 
         if not _validate_client_and_redirect(cfg, store, client_id, redirect_uri):
             return _error("unauthorized_client", "client_id or redirect_uri not recognised", 401)
@@ -306,6 +326,16 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
                 redirect_uri, issuer=cfg.issuer, state=state,
                 error="invalid_request", description="PKCE S256 is required",
             )
+        if decision == "deny":
+            return _authorization_redirect(
+                redirect_uri, issuer=cfg.issuer, state=state,
+                error="access_denied", description="The user denied the request",
+            )
+        if decision != "approve":
+            return _authorization_redirect(
+                redirect_uri, issuer=cfg.issuer, state=state,
+                error="invalid_request", description="Unknown authorization decision",
+            )
 
         # Password gate
         if cfg.admin_password:
@@ -315,6 +345,7 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
                     CONSENT_HTML,
                     state=state, client_id=client_id, redirect_uri=redirect_uri,
                     code_challenge=code_challenge, resource=resource, issuer=cfg.issuer,
+                    client_name=_client_display_name(store, client_id),
                     error_block='<p class="err">Incorrect password. Try again.</p>',
                     status=401)
 
