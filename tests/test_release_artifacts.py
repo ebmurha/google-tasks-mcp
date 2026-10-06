@@ -148,3 +148,11 @@ def test_release_version_is_consistent_across_artifacts():
     assert server_json["packages"][0]["version"] == EXPECTED_VERSION
     assert metadata["version"] == EXPECTED_VERSION
     assert google_tasks_mcp.__version__ == EXPECTED_VERSION
+
+
+def test_oauth_gateway_examples_supply_required_resource_setting():
+    readme = _read("src/mcp_oauth_gateway/README.md")
+
+    assert 'resource=os.environ["MCP_OAUTH_RESOURCE"]' in readme
+    assert 'resource="https://api.example.net/notion/mcp"' in readme
+    assert "MCP_OAUTH_RESOURCE=https://resource.example.com/custom/mcp" in readme

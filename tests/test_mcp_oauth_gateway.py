@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import importlib
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import parse_qs, urlparse
 
@@ -209,6 +210,33 @@ def test_authorization_error_redirect_includes_exact_issuer(configured_env, monk
     assert params["error"] == ["unsupported_response_type"]
     assert params["iss"] == [ISSUER]
     assert params["state"] == ["state-2"]
+
+
+def test_bundled_adapter_preserves_independent_issuer_and_resource(
+    configured_env, monkeypatch
+):
+    issuer = "https://issuer.one.example/auth"
+    resource = "https://resource.two.example/custom/mcp"
+    monkeypatch.setenv("MCP_OAUTH_ISSUER", issuer)
+    monkeypatch.setenv("MCP_OAUTH_RESOURCE", resource)
+    monkeypatch.setenv("MCP_OAUTH_CLIENT_ID", "adapter-client")
+    monkeypatch.setenv("MCP_OAUTH_CLIENT_SECRET", "adapter-secret")
+    monkeypatch.setenv("MCP_OAUTH_SIGNING_SECRET", "s" * 64)
+
+    adapter = importlib.import_module("mcp_oauth_gateway.google_tasks_http_app")
+
+    with TestClient(adapter.app) as client:
+        authorization = client.get(
+            "/.well-known/oauth-authorization-server/auth"
+        )
+        protected = client.get(
+            "/.well-known/oauth-protected-resource/custom/mcp"
+        )
+
+    assert authorization.status_code == 200
+    assert authorization.json()["issuer"] == issuer
+    assert protected.status_code == 200
+    assert protected.json()["resource"] == resource
 
 
 def test_consent_html_escapes_oauth_parameters_and_sets_csp(configured_env, monkeypatch):

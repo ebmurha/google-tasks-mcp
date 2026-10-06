@@ -40,6 +40,7 @@ def create_app():
     return add_mcp_oauth_gateway(
         raw_mcp_app,
         issuer=os.environ["MCP_OAUTH_ISSUER"],
+        resource=os.environ["MCP_OAUTH_RESOURCE"],
         client_id=os.environ["MCP_OAUTH_CLIENT_ID"],
         client_secret=os.environ["MCP_OAUTH_CLIENT_SECRET"],
         signing_secret=os.environ["MCP_OAUTH_SIGNING_SECRET"],
@@ -60,6 +61,7 @@ python -c "import secrets; print('MCP_OAUTH_SIGNING_SECRET=' + secrets.token_hex
 
 ```ini
 MCP_OAUTH_ISSUER=https://tasks.example.com
+MCP_OAUTH_RESOURCE=https://resource.example.com/custom/mcp
 MCP_OAUTH_CLIENT_ID=claude-connector
 MCP_OAUTH_CLIENT_SECRET=<from step 2>
 MCP_OAUTH_SIGNING_SECRET=<from step 2>
@@ -130,13 +132,16 @@ from mcp_oauth_gateway import add_mcp_oauth_gateway
 app = add_mcp_oauth_gateway(
     your_other_mcp_app,
     issuer="https://notion.example.com",
+    resource="https://api.example.net/notion/mcp",
     client_id="claude-connector",
     client_secret="...",
     signing_secret="...",
 )
 ```
 
-Each project gets its own issuer, client, and secrets. The package has zero knowledge of what the MCP app does.
+Each project chooses its own issuer, resource, client, and secrets. The issuer
+and resource do not need to share an origin or path. The package has zero
+knowledge of what the MCP app does.
 
 ---
 
