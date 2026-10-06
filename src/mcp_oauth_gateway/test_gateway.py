@@ -85,7 +85,11 @@ def test_authorize_get_shows_consent(app):
         "resource": RESOURCE,
     })
     assert r.status_code == 200
-    assert "Authorize Claude Connector" in r.text
+    assert "Authorize MCP access" in r.text
+    assert "MCP client" in r.text
+    assert "Claude" not in r.text
+    assert f'<form method="POST" action="{ISSUER}/authorize">' in r.text
+    assert f"form-action {ISSUER}/authorize" in r.headers["content-security-policy"]
 
 
 def test_full_authorization_code_flow(app):
