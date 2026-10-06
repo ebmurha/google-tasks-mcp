@@ -109,9 +109,11 @@ flow.
 
 Successful exchange stores the Google refresh and access tokens through the
 existing account-scoped SQLite boundary. No authorization code, access token,
-refresh token, operator secret, or raw state is persisted in logs or rendered
-in a response. Hosted HTTP tool failures may return the explicitly configured
-safe onboarding URL. Local and recovery use retains the CLI bootstrap.
+refresh token, or operator secret is persisted in logs or rendered in a
+response. Raw state appears only where the OAuth protocol requires it in the
+outbound Google authorization URL and return callback; SQLite stores only its
+hash. Hosted HTTP tool failures may return the explicitly configured safe
+onboarding URL. Local and recovery use retains the CLI bootstrap.
 
 `GOOGLE_REFRESH_TOKEN` is an initial default-account seed only. HTTP startup
 must not overwrite an existing SQLite token with the environment value.
