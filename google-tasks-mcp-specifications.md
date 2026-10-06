@@ -90,6 +90,15 @@ Logs, tests, docs, and MCP responses must not print raw bearer tokens except for
 
 ## MCP OAuth Gateway Rules
 
+An HTTP deployment has one canonical external base URL supplied at runtime as
+`EXTERNAL_BASE_URL`. It must be a public HTTPS origin and may include an
+arbitrarily nested base path. The application derives the Google OAuth callback
+(`<base>/callback`), MCP resource (`<base>/mcp`), OAuth issuer, authorization,
+token, registration and revocation endpoints, and RFC 8414/9728 discovery URLs
+from that value. Moving a deployed server requires changing deployment/runtime
+configuration only; it must not require editing or rebuilding application
+source. Proxy routing must use the same canonical value.
+
 When OAuth gateway mode is enabled, unauthenticated `/mcp` requests must return
 401 and include a `WWW-Authenticate` header whose `resource_metadata` value
 points to RFC 9728 protected-resource metadata. That metadata identifies the

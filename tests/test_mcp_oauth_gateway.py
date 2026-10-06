@@ -19,8 +19,7 @@ REDIRECT_URI = "https://chatgpt.com/connector_platform_oauth_redirect"
 
 
 def _configure(monkeypatch) -> None:
-    monkeypatch.setenv("MCP_OAUTH_ISSUER", ISSUER)
-    monkeypatch.setenv("MCP_OAUTH_RESOURCE", RESOURCE)
+    monkeypatch.setenv("EXTERNAL_BASE_URL", ISSUER)
     monkeypatch.setenv("MCP_OAUTH_CLIENT_ID", "pre-registered-client")
     monkeypatch.setenv("MCP_OAUTH_CLIENT_SECRET", "pre-registered-secret")
     monkeypatch.setenv("MCP_OAUTH_SIGNING_SECRET", "s" * 64)

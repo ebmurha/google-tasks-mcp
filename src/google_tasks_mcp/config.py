@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from dotenv import load_dotenv
 
@@ -33,6 +34,7 @@ class Settings:
     google_client_id: str
     google_client_secret: str
     google_redirect_uri: str
+    external_base_url: str | None
     mcp_bearer_token: str | None
     db_path: Path
     bind_host: str = "127.0.0.1"
@@ -108,6 +110,37 @@ def _required(name: str, value: str | None) -> str:
     return value
 
 
+def _external_base_url(value: str | None) -> str | None:
+    value = _clean(value)
+    if value is None:
+        return None
+    parsed = urlsplit(value)
+    try:
+        port = parsed.port
+    except ValueError:
+        port = -1
+    path = parsed.path.rstrip("/")
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or port is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.netloc != parsed.hostname
+        or not re.fullmatch(r"([a-z0-9-]+\.)+[a-z]{2,}", parsed.hostname.lower())
+        or (path and not re.fullmatch(
+            r"/(?:[A-Za-z0-9._~-]+)(?:/[A-Za-z0-9._~-]+)*", path
+        ))
+    ):
+        raise ConfigError(
+            "EXTERNAL_BASE_URL must be a public HTTPS origin with an optional "
+            "path and no port, query, fragment, or credentials"
+        )
+    return urlunsplit(("https", parsed.hostname, path, "", ""))
+
+
 def _parse_port(value: str | None) -> int:
     raw = _clean(value) or "8787"
     try:
@@ -145,7 +178,12 @@ def get_settings(*, require_bearer_token: bool = False) -> Settings:
             "GOOGLE_CLIENT_SECRET, or provide gcp-oauth.keys.json"
         )
 
-    redirect_uri = _clean(os.getenv("GOOGLE_REDIRECT_URI"))
+    external_base_url = _external_base_url(os.getenv("EXTERNAL_BASE_URL"))
+    redirect_uri = (
+        f"{external_base_url}/callback"
+        if external_base_url
+        else _clean(os.getenv("GOOGLE_REDIRECT_URI"))
+    )
     if not redirect_uri and redirect_candidates:
         redirect_uri = redirect_candidates[0]
 
@@ -157,6 +195,7 @@ def get_settings(*, require_bearer_token: bool = False) -> Settings:
         google_client_id=client_id,
         google_client_secret=client_secret,
         google_redirect_uri=_required("GOOGLE_REDIRECT_URI", redirect_uri),
+        external_base_url=external_base_url,
         mcp_bearer_token=bearer_token,
         db_path=_expand_path(_clean(os.getenv("DB_PATH")) or DEFAULT_DB_PATH),
         bind_host=_clean(os.getenv("BIND_HOST")) or "127.0.0.1",

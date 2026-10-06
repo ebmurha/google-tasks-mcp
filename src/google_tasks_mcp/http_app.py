@@ -114,10 +114,13 @@ def create_protected_app() -> Starlette:
 
 def create_app() -> ASGIApp:
     """Build the app with the OAuth 2.0 authorization-server gateway."""
+    settings = get_settings()
+    if not settings.external_base_url:
+        raise ConfigError("EXTERNAL_BASE_URL is required when MCP OAuth is enabled")
     raw_uris = os.environ.get("MCP_OAUTH_REDIRECT_URIS", "")
     redirect_uris = [u.strip() for u in raw_uris.split(",") if u.strip()]
-    issuer = os.environ["MCP_OAUTH_ISSUER"].rstrip("/")
-    resource = os.environ.get("MCP_OAUTH_RESOURCE", f"{issuer}/mcp").rstrip("/")
+    issuer = settings.external_base_url
+    resource = f"{issuer}/mcp"
     return add_mcp_oauth_gateway(
         _build_starlette_app(),
         issuer=issuer,
@@ -146,7 +149,7 @@ class EnvironmentApp:
 
     def _get_app(self) -> ASGIApp:
         if self._app is None:
-            self._app = create_app() if os.environ.get("MCP_OAUTH_ISSUER") else create_protected_app()
+            self._app = create_app() if os.environ.get("MCP_OAUTH_CLIENT_ID") else create_protected_app()
         return self._app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:

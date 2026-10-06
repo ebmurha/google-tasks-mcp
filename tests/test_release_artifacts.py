@@ -50,6 +50,9 @@ def test_vps_templates_use_placeholders_only():
     assert site_address == "{$GOOGLE_TASKS_MCP_DOMAIN:tasks.example.com} {"
     assert "your-domain.example" not in combined
     assert "MCP_BEARER_TOKEN=" in combined
+    assert "EXTERNAL_BASE_URL=" in combined
+    assert "MCP_OAUTH_ISSUER" not in combined
+    assert "MCP_OAUTH_RESOURCE" not in combined
 
 
 def test_root_docker_files_exist_and_exclude_secrets():

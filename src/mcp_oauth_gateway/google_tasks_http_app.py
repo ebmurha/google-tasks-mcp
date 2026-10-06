@@ -5,7 +5,7 @@ Drop-in replacement that wraps the existing MCP app with the OAuth gateway.
 
 ENVIRONMENT VARIABLES (add to your systemd unit / .env):
 
-  MCP_OAUTH_ISSUER          = https://zoe-tasks.riseos.work
+  EXTERNAL_BASE_URL         = https://tasks.example.com
   MCP_OAUTH_CLIENT_ID       = claude-connector
   MCP_OAUTH_CLIENT_SECRET   = <generate with: python -c "import secrets; print(secrets.token_urlsafe(32))">
   MCP_OAUTH_SIGNING_SECRET  = <generate with: python -c "import secrets; print(secrets.token_hex(32))">
@@ -40,7 +40,7 @@ def create_app():
     """
     raw_mcp_app = create_http_app()
 
-    issuer         = os.environ["MCP_OAUTH_ISSUER"]          # required
+    issuer         = os.environ["EXTERNAL_BASE_URL"].rstrip("/")  # required
     client_id      = os.environ["MCP_OAUTH_CLIENT_ID"]       # required
     client_secret  = os.environ["MCP_OAUTH_CLIENT_SECRET"]   # required
     signing_secret = os.environ["MCP_OAUTH_SIGNING_SECRET"]  # required
@@ -49,7 +49,7 @@ def create_app():
     return add_mcp_oauth_gateway(
         raw_mcp_app,
         issuer=issuer,
-        resource=f"{issuer.rstrip('/')}/mcp",
+        resource=f"{issuer}/mcp",
         client_id=client_id,
         client_secret=client_secret,
         signing_secret=signing_secret,
