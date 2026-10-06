@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import parse_qs, urlparse
 
 from starlette.testclient import TestClient
@@ -208,3 +209,212 @@ def test_authorization_error_redirect_includes_exact_issuer(configured_env, monk
     assert params["error"] == ["unsupported_response_type"]
     assert params["iss"] == [ISSUER]
     assert params["state"] == ["state-2"]
+
+
+def test_consent_html_escapes_oauth_parameters_and_sets_csp(configured_env, monkeypatch):
+    _configure(monkeypatch)
+    _, challenge = _pkce_pair()
+    injected_state = 'x" autofocus onfocus="alert(1)'
+    expected_csp = (
+        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
+        "base-uri 'none'; frame-ancestors 'none'"
+    )
+
+    with TestClient(create_app()) as client:
+        autoapprove = client.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": "pre-registered-client",
+                "redirect_uri": REDIRECT_URI,
+                "state": injected_state,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "resource": RESOURCE,
+            },
+        )
+
+    monkeypatch.setenv("MCP_OAUTH_ADMIN_PASSWORD", "admin-secret")
+    reset_settings_cache()
+    with TestClient(create_app()) as client:
+        consent = client.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": "pre-registered-client",
+                "redirect_uri": REDIRECT_URI,
+                "state": injected_state,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "resource": RESOURCE,
+            },
+        )
+        retry = client.post(
+            "/authorize",
+            data={
+                "response_type": "code",
+                "client_id": "pre-registered-client",
+                "redirect_uri": REDIRECT_URI,
+                "state": injected_state,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "resource": RESOURCE,
+                "password": "incorrect",
+            },
+        )
+
+    for response in (autoapprove, consent, retry):
+        assert response.headers["content-security-policy"] == expected_csp
+        assert 'value="x" autofocus onfocus="alert(1)"' not in response.text
+        assert 'value="x&quot; autofocus onfocus=&quot;alert(1)"' in response.text
+
+
+def test_in_memory_tokens_are_consumed_once_under_concurrency():
+    store = TokenStore("s" * 64, issuer=ISSUER)
+    _, challenge = _pkce_pair()
+    code = store.issue_code("client", REDIRECT_URI, challenge, RESOURCE, ttl=60)
+
+    def consume_code(_):
+        return store.consume_code(
+            code,
+            client_id="client",
+            redirect_uri=REDIRECT_URI,
+            resource=RESOURCE,
+            code_challenge=challenge,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        code_results = list(executor.map(consume_code, range(2)))
+    assert sum(result is not None for result in code_results) == 1
+
+    refresh_token = store.issue_refresh_token("client", RESOURCE, ttl=60)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        refresh_results = list(
+            executor.map(
+                lambda _: store.consume_refresh_token(
+                    refresh_token, "client", RESOURCE
+                ),
+                range(2),
+            )
+        )
+    assert sum(result is not None for result in refresh_results) == 1
+
+
+def test_invalid_code_bindings_do_not_consume_authorization_code(configured_env, monkeypatch):
+    _configure(monkeypatch)
+
+    def exchange(client, code, verifier, **overrides):
+        data = {
+            "grant_type": "authorization_code",
+            "client_id": "pre-registered-client",
+            "client_secret": "pre-registered-secret",
+            "code": code,
+            "redirect_uri": REDIRECT_URI,
+            "code_verifier": verifier,
+            "resource": RESOURCE,
+        }
+        data.update(overrides)
+        return client.post("/token", data=data)
+
+    with TestClient(create_app()) as client:
+        other_client_id, other_client_secret = _register(client)
+
+        code, verifier = _authorize(client, "pre-registered-client")
+        wrong_client = exchange(
+            client,
+            code,
+            verifier,
+            client_id=other_client_id,
+            client_secret=other_client_secret,
+        )
+        assert wrong_client.json()["error"] == "invalid_grant"
+        assert exchange(client, code, verifier).status_code == 200
+
+        code, verifier = _authorize(client, "pre-registered-client")
+        wrong_redirect = exchange(
+            client, code, verifier, redirect_uri="https://other.example/callback"
+        )
+        assert wrong_redirect.json()["error"] == "invalid_grant"
+        assert exchange(client, code, verifier).status_code == 200
+
+        code, verifier = _authorize(client, "pre-registered-client")
+        wrong_pkce = exchange(client, code, "wrong-verifier")
+        assert wrong_pkce.json()["error"] == "invalid_grant"
+        assert exchange(client, code, verifier).status_code == 200
+
+        code, verifier = _authorize(client, "pre-registered-client")
+        wrong_resource = exchange(
+            client, code, verifier, resource="https://other.example/mcp"
+        )
+        assert wrong_resource.json()["error"] == "invalid_target"
+        assert exchange(client, code, verifier).status_code == 200
+
+
+def test_invalid_refresh_bindings_do_not_consume_refresh_token(configured_env, monkeypatch):
+    _configure(monkeypatch)
+
+    with TestClient(create_app()) as client:
+        other_client_id, other_client_secret = _register(client)
+        code, verifier = _authorize(client, "pre-registered-client")
+        issued = client.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": "pre-registered-client",
+                "client_secret": "pre-registered-secret",
+                "code": code,
+                "redirect_uri": REDIRECT_URI,
+                "code_verifier": verifier,
+                "resource": RESOURCE,
+            },
+        )
+        refresh_token = issued.json()["refresh_token"]
+
+        wrong_client = client.post(
+            "/token",
+            data={
+                "grant_type": "refresh_token",
+                "client_id": other_client_id,
+                "client_secret": other_client_secret,
+                "refresh_token": refresh_token,
+                "resource": RESOURCE,
+            },
+        )
+        assert wrong_client.json()["error"] == "invalid_grant"
+
+        legitimate = client.post(
+            "/token",
+            data={
+                "grant_type": "refresh_token",
+                "client_id": "pre-registered-client",
+                "client_secret": "pre-registered-secret",
+                "refresh_token": refresh_token,
+                "resource": RESOURCE,
+            },
+        )
+        assert legitimate.status_code == 200
+        rotated_token = legitimate.json()["refresh_token"]
+
+        wrong_resource = client.post(
+            "/token",
+            data={
+                "grant_type": "refresh_token",
+                "client_id": "pre-registered-client",
+                "client_secret": "pre-registered-secret",
+                "refresh_token": rotated_token,
+                "resource": "https://other.example/mcp",
+            },
+        )
+        assert wrong_resource.json()["error"] == "invalid_target"
+
+        legitimate_again = client.post(
+            "/token",
+            data={
+                "grant_type": "refresh_token",
+                "client_id": "pre-registered-client",
+                "client_secret": "pre-registered-secret",
+                "refresh_token": rotated_token,
+                "resource": RESOURCE,
+            },
+        )
+        assert legitimate_again.status_code == 200

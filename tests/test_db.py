@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from google_tasks_mcp.account import reset_current_account_id, set_current_account_id
 from google_tasks_mcp import db
 
@@ -119,8 +121,12 @@ def test_mcp_oauth_refresh_tokens_rotate_and_do_not_store_raw_values(configured_
         "refresh-token", "mcp-client", "https://tasks.example.com/mcp", 9999999999
     )
 
-    record = db.consume_mcp_oauth_refresh_token("refresh-token")
-    replay = db.consume_mcp_oauth_refresh_token("refresh-token")
+    record = db.consume_mcp_oauth_refresh_token(
+        "refresh-token", "mcp-client", "https://tasks.example.com/mcp"
+    )
+    replay = db.consume_mcp_oauth_refresh_token(
+        "refresh-token", "mcp-client", "https://tasks.example.com/mcp"
+    )
 
     assert record == {
         "client_id": "mcp-client",
@@ -145,14 +151,41 @@ def test_mcp_oauth_refresh_token_backend(configured_env):
             "expires_at": 9999999999,
         },
     )
-    record = backend.consume("refresh-token")
+    record = backend.consume(
+        "refresh-token", "mcp-client", "https://tasks.example.com/mcp"
+    )
 
     assert record == {
         "client_id": "mcp-client",
         "resource": "https://tasks.example.com/mcp",
         "expires_at": 9999999999,
     }
-    assert backend.consume("refresh-token") is None
+    assert backend.consume(
+        "refresh-token", "mcp-client", "https://tasks.example.com/mcp"
+    ) is None
+
+
+def test_mcp_oauth_refresh_token_backend_consumes_once_under_concurrency(configured_env):
+    backend = db.McpOAuthRefreshTokenBackend()
+    resource = "https://tasks.example.com/mcp"
+    backend.save(
+        "refresh-token",
+        {
+            "client_id": "mcp-client",
+            "resource": resource,
+            "expires_at": 9999999999,
+        },
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                lambda _: backend.consume("refresh-token", "mcp-client", resource),
+                range(2),
+            )
+        )
+
+    assert sum(result is not None for result in results) == 1
 
 
 def test_mcp_oauth_clients_persist_only_secret_hash(configured_env):

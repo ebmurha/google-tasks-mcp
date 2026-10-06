@@ -393,21 +393,30 @@ def save_mcp_oauth_refresh_token(token: str, client_id: str, resource: str, expi
         )
 
 
-def consume_mcp_oauth_refresh_token(token: str) -> dict[str, int | str] | None:
+def consume_mcp_oauth_refresh_token(
+    token: str, client_id: str, resource: str
+) -> dict[str, int | str] | None:
     init_db()
     token_hash = _oauth_refresh_token_hash(token)
     now = _now()
     with _connect() as conn:
         row = conn.execute(
             """
-            SELECT client_id, resource, expires_at
-            FROM mcp_oauth_refresh_tokens
+            DELETE FROM mcp_oauth_refresh_tokens
             WHERE token_hash = ?
+              AND client_id = ?
+              AND resource = ?
+              AND expires_at >= ?
+            RETURNING client_id, resource, expires_at
             """,
-            (token_hash,),
+            (token_hash, client_id, resource, now),
         ).fetchone()
-        conn.execute("DELETE FROM mcp_oauth_refresh_tokens WHERE token_hash = ?", (token_hash,))
-    if row is None or row["expires_at"] < now:
+        if row is None:
+            conn.execute(
+                "DELETE FROM mcp_oauth_refresh_tokens WHERE token_hash = ? AND expires_at < ?",
+                (token_hash, now),
+            )
+    if row is None:
         return None
     return {
         "client_id": row["client_id"],
@@ -445,8 +454,10 @@ class McpOAuthRefreshTokenBackend:
             expires_at=float(record["expires_at"]),
         )
 
-    def consume(self, token: str) -> dict[str, Any] | None:
-        record = consume_mcp_oauth_refresh_token(token)
+    def consume(
+        self, token: str, client_id: str, resource: str
+    ) -> dict[str, Any] | None:
+        record = consume_mcp_oauth_refresh_token(token, client_id, resource)
         return dict(record) if record is not None else None
 
     def revoke(self, token: str) -> None:

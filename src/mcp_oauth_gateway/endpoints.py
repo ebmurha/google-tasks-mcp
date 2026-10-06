@@ -10,6 +10,7 @@ Implements:
 """
 import base64
 import hashlib
+import html
 import json
 import time
 import urllib.parse
@@ -107,6 +108,11 @@ AUTOAPPROVE_HTML = """\
 </html>
 """
 
+CONSENT_CSP = (
+    "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
+    "base-uri 'none'; frame-ancestors 'none'"
+)
+
 
 def _json(data: dict, status: int = 200) -> JSONResponse:
     return JSONResponse(data, status_code=status,
@@ -115,6 +121,38 @@ def _json(data: dict, status: int = 200) -> JSONResponse:
 
 def _error(error: str, description: str, status: int = 400) -> JSONResponse:
     return _json({"error": error, "error_description": description}, status)
+
+
+def _consent_response(
+    template: str,
+    *,
+    state: str,
+    client_id: str,
+    redirect_uri: str,
+    code_challenge: str,
+    resource: str,
+    issuer: str,
+    error_block: str = "",
+    status: int = 200,
+) -> HTMLResponse:
+    rendered = template.format(
+        state=html.escape(state, quote=True),
+        client_id=html.escape(client_id, quote=True),
+        redirect_uri=html.escape(redirect_uri, quote=True),
+        code_challenge=html.escape(code_challenge, quote=True),
+        resource=html.escape(resource, quote=True),
+        issuer=html.escape(issuer, quote=True),
+        error_block=error_block,
+    )
+    return HTMLResponse(
+        rendered,
+        status_code=status,
+        headers={
+            "Content-Security-Policy": CONSENT_CSP,
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 def _pkce_verify(verifier: str, challenge: str) -> bool:
@@ -234,15 +272,15 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
             )
 
         if cfg.admin_password:
-            html = CONSENT_HTML.format(
+            return _consent_response(
+                CONSENT_HTML,
                 state=state, client_id=client_id, redirect_uri=redirect_uri,
                 code_challenge=code_challenge, resource=resource,
                 issuer=cfg.issuer, error_block="")
-        else:
-            html = AUTOAPPROVE_HTML.format(
-                state=state, client_id=client_id, redirect_uri=redirect_uri,
-                code_challenge=code_challenge, resource=resource, issuer=cfg.issuer)
-        return HTMLResponse(html)
+        return _consent_response(
+            AUTOAPPROVE_HTML,
+            state=state, client_id=client_id, redirect_uri=redirect_uri,
+            code_challenge=code_challenge, resource=resource, issuer=cfg.issuer)
 
     # ---- /authorize POST (form submit) ------------------------------------
 
@@ -273,11 +311,12 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
         if cfg.admin_password:
             import hmac as _hmac
             if not _hmac.compare_digest(password, cfg.admin_password):
-                html = CONSENT_HTML.format(
+                return _consent_response(
+                    CONSENT_HTML,
                     state=state, client_id=client_id, redirect_uri=redirect_uri,
                     code_challenge=code_challenge, resource=resource, issuer=cfg.issuer,
-                    error_block='<p class="err">Incorrect password. Try again.</p>')
-                return HTMLResponse(html, status_code=401)
+                    error_block='<p class="err">Incorrect password. Try again.</p>',
+                    status=401)
 
         code = store.issue_code(client_id, redirect_uri, code_challenge or None, resource,
                                 cfg.auth_code_ttl)
@@ -314,7 +353,7 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
             verifier     = str(form.get("code_verifier", ""))
             resource     = str(form.get("resource", ""))
 
-            rec = store.consume_code(code)
+            rec = store.get_code(code)
             if not rec:
                 return _error("invalid_grant", "Code invalid or expired")
             if rec["client_id"] != req_client_id:
@@ -328,6 +367,16 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
                     return _error("invalid_grant", "code_verifier required")
                 if not _pkce_verify(verifier, rec["code_challenge"]):
                     return _error("invalid_grant", "PKCE verification failed")
+
+            rec = store.consume_code(
+                code,
+                client_id=req_client_id,
+                redirect_uri=redirect_uri,
+                resource=resource,
+                code_challenge=rec["code_challenge"],
+            )
+            if not rec:
+                return _error("invalid_grant", "Code invalid, expired, or already used")
 
             access_token  = store.issue_access_token(req_client_id, resource, cfg.access_token_ttl)
             refresh_token = store.issue_refresh_token(req_client_id, resource, cfg.refresh_token_ttl)
@@ -343,13 +392,11 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
         if grant_type == "refresh_token":
             rt = str(form.get("refresh_token", ""))
             resource = str(form.get("resource", ""))
-            rec = store.consume_refresh_token(rt)
+            if resource != cfg.resource:
+                return _error("invalid_target", "resource mismatch")
+            rec = store.consume_refresh_token(rt, req_client_id, resource)
             if not rec:
                 return _error("invalid_grant", "Refresh token invalid or expired")
-            if rec["client_id"] != req_client_id:
-                return _error("invalid_grant", "client_id mismatch")
-            if resource != cfg.resource or rec["resource"] != resource:
-                return _error("invalid_target", "resource mismatch")
 
             access_token  = store.issue_access_token(req_client_id, resource, cfg.access_token_ttl)
             new_refresh   = store.issue_refresh_token(req_client_id, resource, cfg.refresh_token_ttl)
