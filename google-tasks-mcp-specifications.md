@@ -92,13 +92,12 @@ explicitly and must not be derived from the MCP OAuth issuer, MCP resource,
 provider hostname, or deployment path. The displayed onboarding URL must never
 contain the operator setup secret.
 
-The application routes remain `/google/oauth` and `/callback` relative to its
-deployment mount. Public deployment location is infrastructure configuration:
-the application does not derive routes from public URLs, deployment prefixes,
-the MCP issuer, or the MCP resource. The configured onboarding URL and Google
-callback URI are opaque protocol values used in links, form policy, OAuth
-requests, and state binding. A reverse proxy that mounts the application below
-a path prefix removes only that mount prefix before forwarding requests.
+The application registers the exact paths from the explicitly configured
+onboarding URL and Google callback URI and retains no root-path aliases. The MCP
+gateway separately registers the exact runtime paths declared by its issuer and
+resource URLs. A reverse proxy forwards public paths unchanged. Hostnames and
+paths remain runtime configuration; changing them never requires source changes
+or application-specific proxy rewrites.
 
 Initiation requires the separately configured operator setup secret submitted
 over HTTPS. A normal MCP client authorization does not grant permission to

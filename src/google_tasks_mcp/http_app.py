@@ -9,6 +9,7 @@ import os
 import secrets
 import time
 from collections.abc import Awaitable, Callable
+from urllib.parse import urlsplit
 
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -221,19 +222,44 @@ async def callback(request: Request) -> HTMLResponse:
     return HTMLResponse(body)
 
 
-def _build_starlette_app() -> Starlette:
+def _configured_path(url: str, fallback: str) -> str:
+    return urlsplit(url).path or fallback
+
+
+def _build_starlette_app(
+    *,
+    mcp_path: str = "/mcp",
+    health_path: str = "/healthz",
+) -> Starlette:
+    try:
+        settings = get_settings()
+    except ConfigError:
+        settings = None
+    onboarding_path = (
+        _configured_path(
+            settings.google_oauth_onboarding_url,
+            GOOGLE_OAUTH_ONBOARDING_PATH,
+        )
+        if settings is not None and settings.google_oauth_onboarding_url
+        else GOOGLE_OAUTH_ONBOARDING_PATH
+    )
+    callback_path = (
+        _configured_path(settings.google_redirect_uri, GOOGLE_OAUTH_CALLBACK_PATH)
+        if settings is not None
+        else GOOGLE_OAUTH_CALLBACK_PATH
+    )
     mcp_server = create_mcp_server()
     mcp_app = mcp_server.streamable_http_app()
     mcp_route = next(route for route in mcp_app.routes if getattr(route, "path", None) == "/mcp")
     routes = [
-        Route("/healthz", healthz, methods=["GET"]),
+        Route(health_path, healthz, methods=["GET"]),
         Route(
-            GOOGLE_OAUTH_ONBOARDING_PATH,
+            onboarding_path,
             google_oauth_onboarding,
             methods=["GET", "POST"],
         ),
-        Route(GOOGLE_OAUTH_CALLBACK_PATH, callback, methods=["GET"]),
-        Route("/mcp", endpoint=mcp_route.endpoint),
+        Route(callback_path, callback, methods=["GET"]),
+        Route(mcp_path, endpoint=mcp_route.endpoint),
     ]
     return Starlette(
         routes=routes,
@@ -255,8 +281,11 @@ def create_app() -> ASGIApp:
     redirect_uris = [u.strip() for u in raw_uris.split(",") if u.strip()]
     issuer = os.environ["MCP_OAUTH_ISSUER"].rstrip("/")
     resource = os.environ.get("MCP_OAUTH_RESOURCE", f"{issuer}/mcp").rstrip("/")
+    issuer_path = _configured_path(issuer, "")
+    resource_path = _configured_path(resource, "/mcp")
+    health_path = f"{issuer_path}/healthz"
     return add_mcp_oauth_gateway(
-        _build_starlette_app(),
+        _build_starlette_app(mcp_path=resource_path, health_path=health_path),
         issuer=issuer,
         resource=resource,
         client_id=os.environ["MCP_OAUTH_CLIENT_ID"],
@@ -269,6 +298,7 @@ def create_app() -> ASGIApp:
         reset_account_context=reset_current_account_id,
         refresh_token_backend=db.McpOAuthRefreshTokenBackend(),
         client_backend=db.McpOAuthClientBackend(),
+        mcp_path_prefix=resource_path,
         allowed_redirect_uris=redirect_uris,
         enable_dcr=os.environ.get("MCP_OAUTH_ENABLE_DCR", "").strip().lower()
         in {"1", "true", "yes", "on"},

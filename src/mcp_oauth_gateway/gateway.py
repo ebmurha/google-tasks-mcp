@@ -62,8 +62,8 @@ def add_mcp_oauth_gateway(
     Returns
     -------
     A new ASGI app that:
-      - Serves OAuth endpoints at /.well-known/…, /authorize, /token, /revoke
-      - Proxies authenticated requests to mcp_app at /mcp
+      - Serves OAuth endpoints at the configured issuer paths
+      - Proxies authenticated requests at the configured MCP resource path
     """
     cfg = GatewayConfig(
         issuer=issuer,
@@ -96,9 +96,8 @@ def add_mcp_oauth_gateway(
     # Compose: OAuth routes first, then MCP app (protected by middleware)
     protected_mcp = MCPAuthMiddleware(mcp_app, cfg, store)
 
-    # Mount OAuth router on the same root; MCP app handles /mcp paths
-    # We combine them in a Starlette app so routing works correctly.
-    combined = _CombinedApp(oauth_router, protected_mcp, mcp_path_prefix)
+    # Combine the exact configured OAuth and MCP paths in one ASGI app.
+    combined = _CombinedApp(oauth_router, protected_mcp, cfg)
     return combined
 
 
@@ -108,10 +107,16 @@ class _CombinedApp:
     The MCP app also owns support routes such as /healthz and /callback.
     """
 
-    def __init__(self, oauth_router, protected_mcp, mcp_path_prefix: str):
+    def __init__(self, oauth_router, protected_mcp, cfg: GatewayConfig):
         self._oauth = oauth_router
         self._mcp = protected_mcp
-        self._prefix = mcp_path_prefix
+        issuer_path = cfg.issuer_path
+        self._oauth_paths = {
+            f"{issuer_path}/authorize",
+            f"{issuer_path}/token",
+            f"{issuer_path}/revoke",
+            f"{issuer_path}/register",
+        }
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
@@ -126,14 +131,5 @@ class _CombinedApp:
 
         await self._mcp(scope, receive, send)
 
-    @staticmethod
-    def _is_oauth_path(path: str) -> bool:
-        return path.startswith(
-            (
-                "/.well-known/",
-                "/authorize",
-                "/token",
-                "/revoke",
-                "/register",
-            )
-        )
+    def _is_oauth_path(self, path: str) -> bool:
+        return path.startswith("/.well-known/") or path in self._oauth_paths

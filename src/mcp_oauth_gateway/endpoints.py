@@ -223,6 +223,11 @@ def _client_display_name(store: TokenStore, client_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
+    issuer_path = cfg.issuer_path
+    authorize_path = f"{issuer_path}/authorize"
+    token_path = f"{issuer_path}/token"
+    revoke_path = f"{issuer_path}/revoke"
+    register_path = f"{issuer_path}/register"
     authorization_metadata_path = urllib.parse.urlsplit(
         well_known_url(cfg.issuer, "oauth-authorization-server")
     ).path
@@ -476,18 +481,14 @@ def build_oauth_router(cfg: GatewayConfig, store: TokenStore) -> Router:
     # ---- routing -----------------------------------------------------------
 
     routes = [
-        Route("/.well-known/oauth-authorization-server", discovery),
-        Route("/.well-known/oauth-protected-resource", protected_resource),
-        Route("/authorize", authorize_get,  methods=["GET"]),
-        Route("/authorize", authorize_post, methods=["POST"]),
-        Route("/token",     token,          methods=["POST"]),
-        Route("/revoke",    revoke,         methods=["POST"]),
-        Route("/register",  register,       methods=["POST"]),
+        Route(authorization_metadata_path, discovery),
+        Route(protected_resource_metadata_path, protected_resource),
+        Route(authorize_path, authorize_get,  methods=["GET"]),
+        Route(authorize_path, authorize_post, methods=["POST"]),
+        Route(token_path,    token,          methods=["POST"]),
+        Route(revoke_path,   revoke,         methods=["POST"]),
+        Route(register_path, register,       methods=["POST"]),
     ]
-    if authorization_metadata_path != "/.well-known/oauth-authorization-server":
-        routes.insert(1, Route(authorization_metadata_path, discovery))
-    if protected_resource_metadata_path != "/.well-known/oauth-protected-resource":
-        routes.insert(2, Route(protected_resource_metadata_path, protected_resource))
     return Router(routes=routes)
 
 

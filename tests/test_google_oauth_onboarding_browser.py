@@ -11,7 +11,7 @@ from playwright.sync_api import sync_playwright
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
-from starlette.routing import Mount, Route
+from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from google_tasks_mcp import db
@@ -98,12 +98,7 @@ def test_hosted_google_onboarding_completes_and_survives_restart(
     provider_app = Starlette(
         routes=[Route("/authorize", provider_authorize, methods=["GET"])]
     )
-    internal_app = http_app.create_protected_app()
-    app = (
-        Starlette(routes=[Mount(deployment_path, app=internal_app)])
-        if deployment_path
-        else internal_app
-    )
+    app = http_app.create_protected_app()
 
     with _serve(provider_app, provider_port), _serve(app, app_port):
         with sync_playwright() as playwright:
@@ -124,13 +119,7 @@ def test_hosted_google_onboarding_completes_and_survives_restart(
     assert token is not None
     assert token.refresh_token == "synthetic-hosted-refresh"
 
-    restarted_internal_app = http_app.create_protected_app()
-    restarted_app = (
-        Starlette(routes=[Mount(deployment_path, app=restarted_internal_app)])
-        if deployment_path
-        else restarted_internal_app
-    )
-    with TestClient(restarted_app) as restarted_client:
+    with TestClient(http_app.create_protected_app()) as restarted_client:
         restarted = restarted_client.get(onboarding_path)
     assert restarted.status_code == 200
     assert "Google is connected" in restarted.text
