@@ -107,11 +107,12 @@ GOOGLE_OAUTH_ONBOARDING_URL=https://your-domain.example/google/oauth
 GOOGLE_OAUTH_SETUP_SECRET=generate-a-long-random-operator-password
 ```
 
-Route both public URLs to this application. The onboarding URL may use any
-hostname or path supported by your proxy; it is not derived from the MCP OAuth
-issuer or resource. The displayed onboarding link never contains the setup
-secret. The application accepts hosted onboarding and callback requests only
-on these configured paths.
+The application always serves `/google/oauth` and `/callback` relative to its
+deployment mount. A reverse proxy may mount the whole application at any domain
+or base path by removing that base path before forwarding. Configure the two
+public URLs explicitly for that mount; the application never derives routes
+from them, the MCP OAuth issuer, or the MCP resource. The displayed onboarding
+link never contains the setup secret.
 
 Open `GOOGLE_OAUTH_ONBOARDING_URL`, enter the operator setup password, continue
 to Google, and approve access. The server validates durable single-use state,

@@ -55,13 +55,14 @@ def test_callback_is_unauthenticated_and_escapes_code():
     assert "&lt;abc&gt;" in response.text
 
 
-def test_hosted_google_oauth_page_has_no_secret_and_supports_configured_path(
+def test_hosted_google_oauth_page_uses_configured_public_url_without_routing_by_it(
     configured_env, monkeypatch
 ):
     _enable_hosted_google_oauth(monkeypatch, onboarding_path="/team/setup/google")
 
     with TestClient(create_protected_app()) as client:
-        response = client.get("/team/setup/google")
+        response = client.get("/google/oauth")
+        public_path = client.get("/team/setup/google")
 
     assert response.status_code == 200
     assert "Google is not connected" in response.text
@@ -71,9 +72,12 @@ def test_hosted_google_oauth_page_has_no_secret_and_supports_configured_path(
         "form-action https://testserver/team/setup/google"
         in response.headers["content-security-policy"]
     )
+    assert public_path.status_code == 404
 
 
-def test_custom_hosted_paths_replace_default_routes(configured_env, monkeypatch):
+def test_canonical_routes_use_configured_public_callback_identity(
+    configured_env, monkeypatch
+):
     _enable_hosted_google_oauth(
         monkeypatch,
         onboarding_path="/team/setup/google",
@@ -86,24 +90,21 @@ def test_custom_hosted_paths_replace_default_routes(configured_env, monkeypatch)
         expires_at=int(time.time()) + 60,
     )
 
-    with patch("google_tasks_mcp.http_app.exchange_code") as exchange, TestClient(
-        create_protected_app()
-    ) as client:
-        default_onboarding = client.post(
+    with TestClient(create_protected_app()) as client:
+        onboarding = client.post(
             "/google/oauth", data={"secret": "operator-secret"}
         )
-        default_callback = client.get(
-            "/callback?state=custom-state&code=synthetic-code"
+        callback = client.get(
+            "/callback?state=custom-state&error=access_denied"
         )
-        configured_callback = client.get(
+        public_callback_path = client.get(
             "/team/google/callback?state=custom-state&error=access_denied"
         )
 
-    assert default_onboarding.status_code == 404
-    assert default_callback.status_code == 404
-    exchange.assert_not_called()
-    assert configured_callback.status_code == 400
-    assert "was denied" in configured_callback.text
+    assert onboarding.status_code == 200
+    assert callback.status_code == 400
+    assert "was denied" in callback.text
+    assert public_callback_path.status_code == 404
 
 
 def test_hosted_google_oauth_requires_operator_secret(configured_env, monkeypatch):

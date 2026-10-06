@@ -9,7 +9,6 @@ import os
 import secrets
 import time
 from collections.abc import Awaitable, Callable
-from urllib.parse import urlsplit
 
 from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -30,6 +29,8 @@ from .server import create_mcp_server
 
 LOGGER = logging.getLogger(__name__)
 GOOGLE_OAUTH_STATE_TTL_SECONDS = 600
+GOOGLE_OAUTH_ONBOARDING_PATH = "/google/oauth"
+GOOGLE_OAUTH_CALLBACK_PATH = "/callback"
 
 
 def _hosted_google_oauth_enabled(settings: Settings) -> bool:
@@ -221,32 +222,19 @@ async def callback(request: Request) -> HTMLResponse:
 
 
 def _build_starlette_app() -> Starlette:
-    try:
-        settings = get_settings()
-    except ConfigError:
-        settings = None
     mcp_server = create_mcp_server()
     mcp_app = mcp_server.streamable_http_app()
     mcp_route = next(route for route in mcp_app.routes if getattr(route, "path", None) == "/mcp")
     routes = [
         Route("/healthz", healthz, methods=["GET"]),
+        Route(
+            GOOGLE_OAUTH_ONBOARDING_PATH,
+            google_oauth_onboarding,
+            methods=["GET", "POST"],
+        ),
+        Route(GOOGLE_OAUTH_CALLBACK_PATH, callback, methods=["GET"]),
         Route("/mcp", endpoint=mcp_route.endpoint),
     ]
-    if settings is not None and _hosted_google_oauth_enabled(settings):
-        public_onboarding_path = urlsplit(
-            settings.google_oauth_onboarding_url or ""
-        ).path
-        public_callback_path = urlsplit(settings.google_redirect_uri).path
-        routes[1:1] = [
-            Route(
-                public_onboarding_path,
-                google_oauth_onboarding,
-                methods=["GET", "POST"],
-            ),
-            Route(public_callback_path, callback, methods=["GET"]),
-        ]
-    else:
-        routes.insert(1, Route("/callback", callback, methods=["GET"]))
     return Starlette(
         routes=routes,
         middleware=[],
