@@ -5,6 +5,9 @@ from unittest.mock import Mock, patch
 
 from google_tasks_mcp import __main__ as server_entrypoint
 from google_tasks_mcp import db
+from google_tasks_mcp.auth import _oauth_error_details, _oauth_error_message
+from google_tasks_mcp.errors import AuthRequired
+from google_tasks_mcp.scripts import bootstrap_oauth as installed_bootstrap_oauth
 from scripts import bootstrap_oauth, create_bearer_token, set_refresh_token
 
 
@@ -33,6 +36,34 @@ def test_create_bearer_token_help_exits_cleanly(capsys):
         assert exc.code == 0
     output = capsys.readouterr().out
     assert "Create an MCP bearer token" in output
+
+
+def test_bootstrap_failure_never_prints_provider_controlled_text(capsys):
+    raw_provider_text = "token=secret-refresh-token\nFORGED log entry"
+    provider_exception = ValueError("raw provider response")
+    provider_exception.error = raw_provider_text  # type: ignore[attr-defined]
+    sanitized = AuthRequired(
+        _oauth_error_message(provider_exception),
+        **_oauth_error_details(provider_exception),
+    )
+    with patch.object(
+        installed_bootstrap_oauth,
+        "build_authorization_flow",
+        return_value=object(),
+    ), patch.object(
+        installed_bootstrap_oauth,
+        "authorization_url",
+        return_value="https://accounts.example/auth",
+    ), patch("builtins.input", return_value="synthetic-code"), patch.object(
+        installed_bootstrap_oauth,
+        "exchange_code",
+        side_effect=sanitized,
+    ):
+        assert installed_bootstrap_oauth.main([]) == 2
+
+    captured = capsys.readouterr()
+    assert captured.err == "bootstrap failed: OAuth code exchange failed\n"
+    assert raw_provider_text not in captured.out + captured.err
 
 
 def test_http_startup_bootstraps_refresh_token_from_environment(configured_env, monkeypatch):

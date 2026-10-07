@@ -9,6 +9,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from google_tasks_mcp import db, http_app
+from google_tasks_mcp.auth import _oauth_error_details, _oauth_error_message
 from google_tasks_mcp.config import reset_settings_cache
 from google_tasks_mcp.errors import AuthRequired
 
@@ -223,3 +224,76 @@ def test_exchange_failure_returns_safe_provider_category_without_mcp_code(
     assert "secret-google-code" not in caplog.text
     assert "provider_error=invalid_client" in caplog.text
     assert "provider_status=401" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "provider_value",
+    [
+        "mystery",
+        "x" * 10000,
+        "invalid_grant\nFORGED log entry",
+        "code=secret-authorization-code",
+        "token=secret-refresh-token",
+    ],
+)
+def test_unrecognized_provider_values_never_cross_callback_outputs(
+    configured_env, monkeypatch, caplog, provider_value
+):
+    issuer, resource, callback = _configure(monkeypatch, "")
+    monkeypatch.setattr(
+        http_app,
+        "get_credentials",
+        lambda _account_id=None: (_ for _ in ()).throw(AuthRequired("missing")),
+    )
+    monkeypatch.setattr(http_app, "build_authorization_flow", lambda *a, **k: object())
+    monkeypatch.setattr(
+        http_app,
+        "authorization_url",
+        lambda _flow, *, state: f"https://google.example/authorize?state={state}",
+    )
+    provider_exception = ValueError("raw provider response")
+    provider_exception.error = provider_value  # type: ignore[attr-defined]
+    sanitized = AuthRequired(
+        _oauth_error_message(provider_exception),
+        **_oauth_error_details(provider_exception),
+    )
+    monkeypatch.setattr(
+        http_app,
+        "exchange_code",
+        lambda *a, **k: (_ for _ in ()).throw(sanitized),
+    )
+
+    with TestClient(http_app.create_app()) as client:
+        started = _approve(client, issuer, resource)
+        state = _google_state(started)
+        failed = client.get(
+            urlparse(callback).path,
+            params={"state": state, "code": "synthetic-code"},
+            follow_redirects=False,
+        )
+
+    db.save_google_oauth_state(
+        "standalone-state",
+        account_id="default",
+        callback_uri=callback,
+        expires_at=9999999999,
+    )
+    with TestClient(http_app.create_app()) as client:
+        failure_page = client.get(
+            urlparse(callback).path,
+            params={"state": "standalone-state", "code": "synthetic-code"},
+        )
+
+    combined_output = (
+        failed.headers["location"]
+        + failure_page.text
+        + caplog.text
+        + str(sanitized)
+    )
+    assert provider_value not in combined_output
+    assert "raw provider response" not in combined_output
+    assert "provider_error=unrecognized" in caplog.text
+    params = parse_qs(urlparse(failed.headers["location"]).query)
+    assert params["error_description"] == [
+        "Google authorization could not be completed"
+    ]

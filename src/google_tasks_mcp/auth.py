@@ -20,33 +20,25 @@ from .errors import AuthRequired
 
 SCOPES = ("https://www.googleapis.com/auth/tasks",)
 REFRESH_BUFFER_SECONDS = 60
+RECOGNIZED_OAUTH_ERRORS = frozenset(
+    {
+        "access_denied",
+        "invalid_client",
+        "invalid_grant",
+        "invalid_request",
+        "invalid_scope",
+        "redirect_uri_mismatch",
+        "server_error",
+        "temporarily_unavailable",
+        "unauthorized_client",
+        "unsupported_grant_type",
+    }
+)
+UNRECOGNIZED_OAUTH_ERROR = "unrecognized"
 
 
-def _oauth_error_message(exc: Exception) -> str:
-    details: list[str] = []
-    for attr in ("error", "description", "status_code"):
-        value = getattr(exc, attr, None)
-        if value:
-            details.append(f"{attr}={value}")
-
-    response = getattr(exc, "response", None)
-    if response is not None:
-        status_code = getattr(response, "status_code", None)
-        if status_code:
-            details.append(f"status_code={status_code}")
-        try:
-            body: Any = response.json()
-        except ValueError:
-            body = None
-        if isinstance(body, dict):
-            for key in ("error", "error_description"):
-                value = body.get(key)
-                if value:
-                    details.append(f"{key}={value}")
-
-    if not details:
-        return "OAuth code exchange failed; run bootstrap again"
-    return "OAuth code exchange failed; " + "; ".join(details)
+def _oauth_error_message(_exc: Exception) -> str:
+    return "OAuth code exchange failed"
 
 
 def _oauth_error_details(exc: Exception) -> dict[str, str | int]:
@@ -57,15 +49,19 @@ def _oauth_error_details(exc: Exception) -> dict[str, str | int]:
         status_code = status_code or getattr(response, "status_code", None)
         try:
             body: Any = response.json()
-        except ValueError:
+        except Exception:
             body = None
         if isinstance(body, dict):
             provider_error = provider_error or body.get("error")
 
-    details: dict[str, str | int] = {}
-    if isinstance(provider_error, str) and provider_error:
-        details["provider_error"] = provider_error
-    if isinstance(status_code, int):
+    category = (
+        provider_error
+        if isinstance(provider_error, str)
+        and provider_error in RECOGNIZED_OAUTH_ERRORS
+        else UNRECOGNIZED_OAUTH_ERROR
+    )
+    details: dict[str, str | int] = {"provider_error": category}
+    if type(status_code) is int and 100 <= status_code <= 599:
         details["provider_status"] = status_code
     return details
 
