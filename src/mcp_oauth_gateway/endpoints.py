@@ -24,6 +24,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from starlette.routing import Route, Router
 
 from .config import GatewayConfig, well_known_url
+from .html_ui import authorization_page
 from .store import TokenStore
 
 
@@ -48,31 +49,6 @@ AuthorizationApprovalHandler = Callable[
 # ---------------------------------------------------------------------------
 
 CONSENT_HTML = """\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Authorize MCP access</title>
-  <style>
-    body{{font-family:system-ui,sans-serif;max-width:420px;margin:80px auto;padding:0 20px;color:#111}}
-    h2{{margin-bottom:8px}}
-    p{{color:#555;margin-bottom:24px}}
-    .card{{border:1px solid #e2e8f0;border-radius:12px;padding:28px}}
-    label{{display:block;margin-bottom:6px;font-weight:500}}
-    input[type=password]{{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;
-      font-size:15px;box-sizing:border-box;margin-bottom:16px}}
-    button{{width:100%;padding:12px;background:#2563eb;color:#fff;border:none;
-      border-radius:8px;font-size:15px;cursor:pointer;font-weight:600}}
-    button:hover{{background:#1d4ed8}}
-    button.deny{{margin-top:8px;background:#fff;color:#475569;border:1px solid #cbd5e1}}
-    button.deny:hover{{background:#f8fafc}}
-    .err{{color:#dc2626;font-size:14px;margin-bottom:12px}}
-    .meta{{font-size:12px;color:#94a3b8;margin-top:16px;text-align:center}}
-  </style>
-</head>
-<body>
-<div class="card">
   <h2>Authorize MCP access</h2>
   <p><strong>{client_name}</strong> is requesting access. Enter the admin password to approve.</p>
   {error_block}
@@ -87,34 +63,12 @@ CONSENT_HTML = """\
     <label for="pw">Admin password</label>
     <input type="password" id="pw" name="password" autofocus placeholder="password">
     <button type="submit" name="decision" value="approve">Approve access</button>
-    <button class="deny" type="submit" name="decision" value="deny">Deny</button>
+    <button class="secondary" type="submit" name="decision" value="deny">Deny</button>
   </form>
   <p class="meta">Issuer: {issuer}</p>
-</div>
-</body>
-</html>
 """
 
 AUTOAPPROVE_HTML = """\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Authorize MCP access</title>
-  <style>
-    body{{font-family:system-ui,sans-serif;max-width:420px;margin:80px auto;padding:0 20px;color:#111}}
-    .card{{border:1px solid #e2e8f0;border-radius:12px;padding:28px}}
-    h2{{margin-bottom:8px}}p{{color:#555;margin-bottom:24px}}
-    button{{width:100%;padding:12px;background:#2563eb;color:#fff;border:none;
-      border-radius:8px;font-size:15px;cursor:pointer;font-weight:600}}
-    button:hover{{background:#1d4ed8}}
-    button.deny{{margin-top:8px;background:#fff;color:#475569;border:1px solid #cbd5e1}}
-    button.deny:hover{{background:#f8fafc}}
-    .meta{{font-size:12px;color:#94a3b8;margin-top:16px;text-align:center}}
-  </style>
-</head>
-<body>
-<div class="card">
   <h2>Authorize MCP access</h2>
   <p><strong>{client_name}</strong> is requesting access.</p>
   <form method="POST" action="{authorization_endpoint}">
@@ -126,12 +80,9 @@ AUTOAPPROVE_HTML = """\
     <input type="hidden" name="resource"       value="{resource}">
     <input type="hidden" name="response_type"  value="code">
     <button type="submit" name="decision" value="approve">Approve access</button>
-    <button class="deny" type="submit" name="decision" value="deny">Deny</button>
+    <button class="secondary" type="submit" name="decision" value="deny">Deny</button>
   </form>
   <p class="meta">Issuer: {issuer}</p>
-</div>
-</body>
-</html>
 """
 
 def _json(data: dict, status: int = 200) -> JSONResponse:
@@ -159,7 +110,7 @@ def _consent_response(
     authorization_endpoint = f"{issuer.rstrip('/')}/authorize"
     # form-action is enforced across redirects, so the validated OAuth callback
     # URI must be allowed for the authorization response redirect.
-    rendered = template.format(
+    body = template.format(
         state=html.escape(state, quote=True),
         client_id=html.escape(client_id, quote=True),
         redirect_uri=html.escape(redirect_uri, quote=True),
@@ -170,6 +121,7 @@ def _consent_response(
         authorization_endpoint=html.escape(authorization_endpoint, quote=True),
         error_block=error_block,
     )
+    rendered = authorization_page("Authorize MCP access", body)
     return HTMLResponse(
         rendered,
         status_code=status,
@@ -377,7 +329,7 @@ def build_oauth_router(
                     state=state, client_id=client_id, redirect_uri=redirect_uri,
                     code_challenge=code_challenge, resource=resource, issuer=cfg.issuer,
                     client_name=_client_display_name(store, client_id),
-                    error_block='<p class="err">Incorrect password. Try again.</p>',
+                    error_block='<p class="error">Incorrect password. Try again.</p>',
                     status=401)
 
         authorization = AuthorizationRequest(

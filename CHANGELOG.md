@@ -19,6 +19,8 @@ All notable changes to this project will be documented in this file.
 - Existing static bearer-token access remains available. MCP tool names, inputs, and response shapes are unchanged.
 
 ### Fixed
+- Give MCP consent, Google authorization, callback, and completion pages one
+  consistent lightweight visual design.
 - End the MCP consent form submission before continuing into Google OAuth so
   restrictive `form-action` CSP does not block chained Connect or Reconnect.
 

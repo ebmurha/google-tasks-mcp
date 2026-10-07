@@ -80,7 +80,8 @@ def test_connect_chains_google_and_resumes_after_restart(
     assert "location" not in google_redirect.headers
     assert "http-equiv=\"refresh\"" in google_redirect.text
     assert google_redirect.headers["content-security-policy"] == (
-        "default-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+        "default-src 'none'; style-src 'unsafe-inline'; "
+        "base-uri 'none'; frame-ancestors 'none'"
     )
     google_state = _google_state(google_redirect)
     with db._connect() as conn:
