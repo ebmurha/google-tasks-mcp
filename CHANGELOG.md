@@ -19,6 +19,8 @@ All notable changes to this project will be documented in this file.
 - Existing static bearer-token access remains available. MCP tool names, inputs, and response shapes are unchanged.
 
 ### Fixed
+- Allow loopback HTTP issuer and resource URLs for local OAuth browser testing
+  while continuing to require HTTPS for every remote host.
 - Give MCP consent, Google authorization, callback, and completion pages one
   consistent lightweight visual design.
 - End the MCP consent form submission before continuing into Google OAuth so
