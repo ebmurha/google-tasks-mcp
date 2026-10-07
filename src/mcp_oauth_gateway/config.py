@@ -5,6 +5,14 @@ import secrets
 from urllib.parse import urlsplit, urlunsplit
 
 
+def _is_https_or_loopback_http(value: str) -> bool:
+    parsed = urlsplit(value)
+    return parsed.scheme == "https" or (
+        parsed.scheme == "http"
+        and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+    )
+
+
 def well_known_url(identifier: str, suffix: str) -> str:
     """Build an RFC 8414/9728 metadata URL for an identifier with an optional path."""
     parsed = urlsplit(identifier)
@@ -60,8 +68,12 @@ class GatewayConfig:
     reset_account_context: Optional[Callable[[Any], None]] = None
 
     def validate(self):
-        assert self.issuer.startswith("https://"), "issuer must be https"
-        assert self.resource.startswith("https://"), "resource must be https"
+        assert _is_https_or_loopback_http(self.issuer), (
+            "issuer must be https except on loopback hosts"
+        )
+        assert _is_https_or_loopback_http(self.resource), (
+            "resource must be https except on loopback hosts"
+        )
         assert self.client_id, "client_id required"
         assert self.client_secret, "client_secret required"
         assert len(self.signing_secret) >= 32, "signing_secret must be >= 32 chars"

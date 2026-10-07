@@ -24,6 +24,7 @@ from mcp_oauth_gateway import (
     add_mcp_oauth_gateway,
     authorization_redirect,
 )
+from mcp_oauth_gateway.html_ui import authorization_page
 
 from . import db
 from .account import DEFAULT_ACCOUNT_ID, reset_current_account_id, set_current_account_id
@@ -51,14 +52,7 @@ def _hosted_google_oauth_enabled(settings: Settings) -> bool:
 def _hosted_html(body: str, *, status: int = 200, form_action: str | None = None) -> HTMLResponse:
     form_policy = f"; form-action {form_action}" if form_action else ""
     return HTMLResponse(
-        "<!doctype html><html lang=\"en\"><head>"
-        "<meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\">"
-        "<title>Google Tasks authorization</title>"
-        "<style>body{font-family:system-ui,sans-serif;max-width:34rem;margin:4rem auto;padding:0 1rem}"
-        ".card{border:1px solid #dbe3ea;border-radius:12px;padding:1.5rem}"
-        "input,button{box-sizing:border-box;width:100%;padding:.75rem;margin-top:.75rem}"
-        "a{display:inline-block;margin-top:1rem}</style></head><body><div class=\"card\">"
-        f"{body}</div></body></html>",
+        authorization_page("Google Tasks authorization", body),
         status_code=status,
         headers={
             "Cache-Control": "no-store",
@@ -75,17 +69,18 @@ def _hosted_html(body: str, *, status: int = 200, form_action: str | None = None
 def _google_oauth_continuation(google_url: str) -> HTMLResponse:
     escaped_url = html.escape(google_url, quote=True)
     return HTMLResponse(
-        "<!doctype html><html lang=\"en\"><head>"
-        "<meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\">"
-        f'<meta http-equiv="refresh" content="0; url={escaped_url}">'
-        "<title>Continue to Google</title></head><body>"
-        "<p>Continuing to Google authorization.</p>"
-        f'<p><a href="{escaped_url}">Continue to Google</a></p>'
-        "</body></html>",
+        authorization_page(
+            "Continue to Google",
+            "<h1>Continue to Google</h1>"
+            "<p>Continuing to Google authorization.</p>"
+            f'<a class="button" href="{escaped_url}">Continue to Google</a>',
+            extra_head=f'<meta http-equiv="refresh" content="0; url={escaped_url}">',
+        ),
         headers={
             "Cache-Control": "no-store",
             "Content-Security-Policy": (
-                "default-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+                "default-src 'none'; style-src 'unsafe-inline'; "
+                "base-uri 'none'; frame-ancestors 'none'"
             ),
             "Referrer-Policy": "no-referrer",
             "X-Content-Type-Options": "nosniff",
@@ -182,7 +177,7 @@ async def google_oauth_onboarding(request: Request) -> HTMLResponse:
     return _hosted_html(
         "<h1>Continue to Google</h1>"
         "<p>The setup password was accepted. Continue to Google's consent screen.</p>"
-        f'<a href="{html.escape(google_url, quote=True)}">Continue to Google</a>'
+        f'<a class="button" href="{html.escape(google_url, quote=True)}">Continue to Google</a>'
     )
 
 
@@ -364,19 +359,14 @@ async def callback(
     code = request.query_params.get("code")
     if code:
         escaped_code = html.escape(code, quote=True)
-        body = (
-            "<!doctype html><html><body>"
+        return _hosted_html(
+            "<h1>Authorization complete</h1>"
             "<p>Copy this code into your terminal:</p>"
-            f"<code>{escaped_code}</code>"
-            "</body></html>"
+            f"<code>{escaped_code}</code>",
         )
-    else:
-        body = (
-            "<!doctype html><html><body>"
-            "<p>No OAuth code was provided.</p>"
-            "</body></html>"
-        )
-    return HTMLResponse(body)
+    return _hosted_html(
+        "<h1>Authorization failed</h1><p>No OAuth code was provided.</p>",
+    )
 
 
 def _configured_path(url: str, fallback: str) -> str:

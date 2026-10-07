@@ -19,7 +19,6 @@ from google_tasks_mcp import db
 from google_tasks_mcp import http_app
 from google_tasks_mcp.config import reset_settings_cache
 from google_tasks_mcp.errors import AuthRequired
-from mcp_oauth_gateway.config import GatewayConfig
 
 
 def _free_port() -> int:
@@ -151,7 +150,6 @@ def test_mcp_connect_chains_google_and_returns_to_unrelated_client(
     monkeypatch.setenv("MCP_OAUTH_REDIRECT_URIS", client_callback)
     monkeypatch.setenv("MCP_OAUTH_ADMIN_PASSWORD", "operator-password")
     reset_settings_cache()
-    monkeypatch.setattr(GatewayConfig, "validate", lambda self: None)
     monkeypatch.setattr(
         http_app,
         "get_credentials",

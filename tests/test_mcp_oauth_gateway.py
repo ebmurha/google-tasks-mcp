@@ -11,6 +11,7 @@ from starlette.testclient import TestClient
 from google_tasks_mcp import db
 from google_tasks_mcp.config import reset_settings_cache
 from google_tasks_mcp.http_app import create_app
+from mcp_oauth_gateway.config import GatewayConfig
 from mcp_oauth_gateway.store import TokenStore
 
 
@@ -19,6 +20,48 @@ RESOURCE = f"{ISSUER}/mcp"
 REDIRECT_URI = "https://chatgpt.com/connector_platform_oauth_redirect"
 ISSUER_PATH = urlparse(ISSUER).path
 RESOURCE_PATH = urlparse(RESOURCE).path
+
+
+def test_gateway_config_allows_loopback_http_for_local_browser_flow():
+    GatewayConfig(
+        issuer="http://127.0.0.1:8787",
+        resource="http://127.0.0.1:8787/mcp",
+        client_id="local-browser-test",
+        client_secret="local-browser-client-secret",
+        signing_secret="s" * 64,
+    ).validate()
+
+
+def test_gateway_config_rejects_non_loopback_http():
+    config = GatewayConfig(
+        issuer="http://tasks.example.com",
+        resource="http://tasks.example.com/mcp",
+        client_id="browser-test",
+        client_secret="browser-client-secret",
+        signing_secret="s" * 64,
+    )
+
+    try:
+        config.validate()
+    except AssertionError as exc:
+        assert str(exc) == "issuer must be https except on loopback hosts"
+    else:
+        raise AssertionError("non-loopback HTTP issuer was accepted")
+
+    config = GatewayConfig(
+        issuer="https://tasks.example.com",
+        resource="http://tasks.example.com/mcp",
+        client_id="browser-test",
+        client_secret="browser-client-secret",
+        signing_secret="s" * 64,
+    )
+
+    try:
+        config.validate()
+    except AssertionError as exc:
+        assert str(exc) == "resource must be https except on loopback hosts"
+    else:
+        raise AssertionError("non-loopback HTTP resource was accepted")
 
 
 def _configure(monkeypatch) -> None:
