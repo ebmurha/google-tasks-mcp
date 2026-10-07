@@ -49,6 +49,27 @@ def _oauth_error_message(exc: Exception) -> str:
     return "OAuth code exchange failed; " + "; ".join(details)
 
 
+def _oauth_error_details(exc: Exception) -> dict[str, str | int]:
+    provider_error = getattr(exc, "error", None)
+    status_code = getattr(exc, "status_code", None)
+    response = getattr(exc, "response", None)
+    if response is not None:
+        status_code = status_code or getattr(response, "status_code", None)
+        try:
+            body: Any = response.json()
+        except ValueError:
+            body = None
+        if isinstance(body, dict):
+            provider_error = provider_error or body.get("error")
+
+    details: dict[str, str | int] = {}
+    if isinstance(provider_error, str) and provider_error:
+        details["provider_error"] = provider_error
+    if isinstance(status_code, int):
+        details["provider_status"] = status_code
+    return details
+
+
 def _extract_code(value: str) -> str:
     value = value.strip()
     parsed = urlparse(value)
@@ -103,7 +124,10 @@ def exchange_code(code: str, *, flow: Flow | None = None, account_id: str | None
     try:
         flow.fetch_token(code=code)
     except Exception as exc:  # google-auth-oauthlib raises requests/oauthlib errors.
-        raise AuthRequired(_oauth_error_message(exc)) from exc
+        raise AuthRequired(
+            _oauth_error_message(exc),
+            **_oauth_error_details(exc),
+        ) from exc
 
     credentials = flow.credentials
     if not credentials.refresh_token:

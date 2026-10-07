@@ -176,3 +176,50 @@ def test_google_denial_returns_client_error_without_mcp_code(
     assert params["state"] == ["original-client-state"]
     assert params["iss"] == [issuer]
     assert "code" not in params
+
+
+def test_exchange_failure_returns_safe_provider_category_without_mcp_code(
+    configured_env, monkeypatch, caplog
+):
+    issuer, resource, callback = _configure(monkeypatch, "")
+    monkeypatch.setattr(
+        http_app,
+        "get_credentials",
+        lambda _account_id=None: (_ for _ in ()).throw(AuthRequired("missing")),
+    )
+    monkeypatch.setattr(http_app, "build_authorization_flow", lambda *a, **k: object())
+    monkeypatch.setattr(
+        http_app,
+        "authorization_url",
+        lambda _flow, *, state: f"https://google.example/authorize?state={state}",
+    )
+    monkeypatch.setattr(
+        http_app,
+        "exchange_code",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AuthRequired(
+                "provider response intentionally hidden",
+                provider_error="invalid_client",
+                provider_status=401,
+            )
+        ),
+    )
+
+    with TestClient(http_app.create_app()) as client:
+        started = _approve(client, issuer, resource)
+        state = _google_state(started)
+        failed = client.get(
+            urlparse(callback).path,
+            params={"state": state, "code": "secret-google-code"},
+            follow_redirects=False,
+        )
+
+    params = parse_qs(urlparse(failed.headers["location"]).query)
+    assert params["error"] == ["server_error"]
+    assert params["error_description"] == [
+        "Google rejected the configured OAuth client credentials"
+    ]
+    assert "code" not in params
+    assert "secret-google-code" not in caplog.text
+    assert "provider_error=invalid_client" in caplog.text
+    assert "provider_status=401" in caplog.text

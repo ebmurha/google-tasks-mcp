@@ -21,6 +21,8 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - End the MCP consent form submission before continuing into Google OAuth so
   restrictive `form-action` CSP does not block chained Connect or Reconnect.
+- Preserve Google token-endpoint error categories in secret-safe diagnostics so
+  post-consent exchange failures identify the rejected configuration boundary.
 
 ## [0.4.0] - 2026-05-21
 

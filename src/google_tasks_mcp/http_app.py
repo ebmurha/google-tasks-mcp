@@ -228,6 +228,26 @@ def _pending_mcp_error(
     )
 
 
+def _google_exchange_error_description(exc: AuthRequired) -> str:
+    provider_error = exc.details.get("provider_error")
+    provider_status = exc.details.get("provider_status")
+    LOGGER.warning(
+        "Google OAuth code exchange failed (provider_error=%s, provider_status=%s)",
+        provider_error or "unknown",
+        provider_status or "unknown",
+    )
+    descriptions = {
+        "invalid_client": "Google rejected the configured OAuth client credentials",
+        "invalid_grant": "Google rejected or expired the authorization code",
+        "redirect_uri_mismatch": "Google rejected the configured callback URI",
+        "unauthorized_client": "Google does not allow this OAuth client to exchange the code",
+    }
+    return descriptions.get(
+        str(provider_error),
+        "Google authorization could not be completed",
+    )
+
+
 async def callback(
     request: Request,
     *,
@@ -302,12 +322,12 @@ async def callback(
         try:
             flow = build_authorization_flow(settings, state=state)
             exchange_code(code, flow=flow, account_id=state_record.account_id)
-        except AuthRequired:
+        except AuthRequired as exc:
             if pending is not None:
                 return _pending_mcp_error(
                     pending,
                     error="server_error",
-                    description="Google authorization could not be completed",
+                    description=_google_exchange_error_description(exc),
                 )
             return _hosted_html(
                 "<h1>Authorization failed</h1>"
