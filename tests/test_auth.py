@@ -1,6 +1,44 @@
 from __future__ import annotations
 
-from google_tasks_mcp.auth import _extract_code, _oauth_error_message, authorization_url
+from google_tasks_mcp import db
+from google_tasks_mcp.auth import (
+    _extract_code,
+    _oauth_error_message,
+    authorization_url,
+    build_authorization_flow,
+)
+
+
+def test_google_pkce_verifier_survives_durable_state_round_trip(configured_env):
+    flow = build_authorization_flow(state="durable-state")
+    authorization_url(flow, state="durable-state")
+    assert flow.code_verifier
+
+    db.save_google_oauth_state(
+        "durable-state",
+        account_id="default",
+        callback_uri="http://localhost:8787/callback",
+        expires_at=9999999999,
+        google_code_verifier=flow.code_verifier,
+    )
+    state = db.consume_google_oauth_state(
+        "durable-state",
+        callback_uri="http://localhost:8787/callback",
+    )
+
+    assert state is not None
+    assert state.google_code_verifier == flow.code_verifier
+    resumed = build_authorization_flow(
+        state="durable-state",
+        code_verifier=state.google_code_verifier,
+    )
+    assert resumed.code_verifier == flow.code_verifier
+    with db._connect() as conn:
+        stored = conn.execute(
+            "SELECT google_code_verifier, consumed_at FROM google_oauth_states"
+        ).fetchone()
+    assert stored["google_code_verifier"] is None
+    assert stored["consumed_at"] is not None
 
 
 def test_extract_code_accepts_plain_code():

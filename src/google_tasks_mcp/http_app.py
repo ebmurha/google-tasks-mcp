@@ -170,14 +170,15 @@ async def google_oauth_onboarding(request: Request) -> HTMLResponse:
         )
 
     state = secrets.token_urlsafe(32)
+    flow = build_authorization_flow(settings, state=state)
+    google_url = authorization_url(flow, state=state)
     db.save_google_oauth_state(
         state,
         account_id=DEFAULT_ACCOUNT_ID,
         callback_uri=settings.google_redirect_uri,
         expires_at=int(time.time()) + GOOGLE_OAUTH_STATE_TTL_SECONDS,
+        google_code_verifier=getattr(flow, "code_verifier", None),
     )
-    flow = build_authorization_flow(settings, state=state)
-    google_url = authorization_url(flow, state=state)
     return _hosted_html(
         "<h1>Continue to Google</h1>"
         "<p>The setup password was accepted. Continue to Google's consent screen.</p>"
@@ -193,11 +194,14 @@ def start_chained_google_oauth(
     except AuthRequired:
         settings = get_settings()
         state = secrets.token_urlsafe(32)
+        flow = build_authorization_flow(settings, state=state)
+        google_url = authorization_url(flow, state=state)
         db.save_google_oauth_state(
             state,
             account_id=DEFAULT_ACCOUNT_ID,
             callback_uri=settings.google_redirect_uri,
             expires_at=int(time.time()) + GOOGLE_OAUTH_STATE_TTL_SECONDS,
+            google_code_verifier=getattr(flow, "code_verifier", None),
             pending_mcp_authorization=db.PendingMcpAuthorization(
                 client_id=authorization.client_id,
                 redirect_uri=authorization.redirect_uri,
@@ -208,8 +212,7 @@ def start_chained_google_oauth(
                 issuer=authorization.issuer,
             ),
         )
-        flow = build_authorization_flow(settings, state=state)
-        return _google_oauth_continuation(authorization_url(flow, state=state))
+        return _google_oauth_continuation(google_url)
     return None
 
 
@@ -320,7 +323,11 @@ async def callback(
                 status=400,
             )
         try:
-            flow = build_authorization_flow(settings, state=state)
+            flow = build_authorization_flow(
+                settings,
+                state=state,
+                code_verifier=state_record.google_code_verifier,
+            )
             exchange_code(code, flow=flow, account_id=state_record.account_id)
         except AuthRequired as exc:
             if pending is not None:

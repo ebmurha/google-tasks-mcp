@@ -80,19 +80,30 @@ def _extract_code(value: str) -> str:
     return value
 
 
-def _build_flow(settings: Settings | None = None, *, state: str | None = None) -> Flow:
+def _build_flow(
+    settings: Settings | None = None,
+    *,
+    state: str | None = None,
+    code_verifier: str | None = None,
+) -> Flow:
     settings = settings or get_settings()
     flow = Flow.from_client_config(
-        settings.client_config(), scopes=list(SCOPES), state=state
+        settings.client_config(),
+        scopes=list(SCOPES),
+        state=state,
+        code_verifier=code_verifier,
     )
     flow.redirect_uri = settings.google_redirect_uri
     return flow
 
 
 def build_authorization_flow(
-    settings: Settings | None = None, *, state: str | None = None
+    settings: Settings | None = None,
+    *,
+    state: str | None = None,
+    code_verifier: str | None = None,
 ) -> Flow:
-    return _build_flow(settings, state=state)
+    return _build_flow(settings, state=state, code_verifier=code_verifier)
 
 
 def authorization_url(flow: Flow | None = None, *, state: str | None = None) -> str:
