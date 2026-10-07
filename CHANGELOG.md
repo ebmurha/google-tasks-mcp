@@ -25,6 +25,12 @@ All notable changes to this project will be documented in this file.
   consistent lightweight visual design.
 - End the MCP consent form submission before continuing into Google OAuth so
   restrictive `form-action` CSP does not block chained Connect or Reconnect.
+- Preserve Google token-endpoint error categories in secret-safe diagnostics so
+  post-consent exchange failures identify the rejected configuration boundary.
+- Persist the Google PKCE verifier with durable OAuth state and reuse it during
+  callback exchange, including across process restarts.
+- Restrict Google OAuth failure diagnostics to recognized error categories and
+  bounded HTTP statuses without exposing provider-controlled response text.
 
 ## [0.4.0] - 2026-05-21
 

@@ -20,33 +20,50 @@ from .errors import AuthRequired
 
 SCOPES = ("https://www.googleapis.com/auth/tasks",)
 REFRESH_BUFFER_SECONDS = 60
+RECOGNIZED_OAUTH_ERRORS = frozenset(
+    {
+        "access_denied",
+        "invalid_client",
+        "invalid_grant",
+        "invalid_request",
+        "invalid_scope",
+        "redirect_uri_mismatch",
+        "server_error",
+        "temporarily_unavailable",
+        "unauthorized_client",
+        "unsupported_grant_type",
+    }
+)
+UNRECOGNIZED_OAUTH_ERROR = "unrecognized"
 
 
-def _oauth_error_message(exc: Exception) -> str:
-    details: list[str] = []
-    for attr in ("error", "description", "status_code"):
-        value = getattr(exc, attr, None)
-        if value:
-            details.append(f"{attr}={value}")
+def _oauth_error_message(_exc: Exception) -> str:
+    return "OAuth code exchange failed"
 
+
+def _oauth_error_details(exc: Exception) -> dict[str, str | int]:
+    provider_error = getattr(exc, "error", None)
+    status_code = getattr(exc, "status_code", None)
     response = getattr(exc, "response", None)
     if response is not None:
-        status_code = getattr(response, "status_code", None)
-        if status_code:
-            details.append(f"status_code={status_code}")
+        status_code = status_code or getattr(response, "status_code", None)
         try:
             body: Any = response.json()
-        except ValueError:
+        except Exception:
             body = None
         if isinstance(body, dict):
-            for key in ("error", "error_description"):
-                value = body.get(key)
-                if value:
-                    details.append(f"{key}={value}")
+            provider_error = provider_error or body.get("error")
 
-    if not details:
-        return "OAuth code exchange failed; run bootstrap again"
-    return "OAuth code exchange failed; " + "; ".join(details)
+    category = (
+        provider_error
+        if isinstance(provider_error, str)
+        and provider_error in RECOGNIZED_OAUTH_ERRORS
+        else UNRECOGNIZED_OAUTH_ERROR
+    )
+    details: dict[str, str | int] = {"provider_error": category}
+    if type(status_code) is int and 100 <= status_code <= 599:
+        details["provider_status"] = status_code
+    return details
 
 
 def _extract_code(value: str) -> str:
@@ -59,19 +76,30 @@ def _extract_code(value: str) -> str:
     return value
 
 
-def _build_flow(settings: Settings | None = None, *, state: str | None = None) -> Flow:
+def _build_flow(
+    settings: Settings | None = None,
+    *,
+    state: str | None = None,
+    code_verifier: str | None = None,
+) -> Flow:
     settings = settings or get_settings()
     flow = Flow.from_client_config(
-        settings.client_config(), scopes=list(SCOPES), state=state
+        settings.client_config(),
+        scopes=list(SCOPES),
+        state=state,
+        code_verifier=code_verifier,
     )
     flow.redirect_uri = settings.google_redirect_uri
     return flow
 
 
 def build_authorization_flow(
-    settings: Settings | None = None, *, state: str | None = None
+    settings: Settings | None = None,
+    *,
+    state: str | None = None,
+    code_verifier: str | None = None,
 ) -> Flow:
-    return _build_flow(settings, state=state)
+    return _build_flow(settings, state=state, code_verifier=code_verifier)
 
 
 def authorization_url(flow: Flow | None = None, *, state: str | None = None) -> str:
@@ -103,7 +131,10 @@ def exchange_code(code: str, *, flow: Flow | None = None, account_id: str | None
     try:
         flow.fetch_token(code=code)
     except Exception as exc:  # google-auth-oauthlib raises requests/oauthlib errors.
-        raise AuthRequired(_oauth_error_message(exc)) from exc
+        raise AuthRequired(
+            _oauth_error_message(exc),
+            **_oauth_error_details(exc),
+        ) from exc
 
     credentials = flow.credentials
     if not credentials.refresh_token:
