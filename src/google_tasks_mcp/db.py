@@ -58,6 +58,7 @@ class GoogleOAuthState:
     callback_uri: str
     expires_at: int
     consumed_at: int
+    google_code_verifier: str | None = None
     pending_mcp_authorization: PendingMcpAuthorization | None = None
 
 
@@ -133,7 +134,8 @@ CREATE TABLE IF NOT EXISTS google_oauth_states (
     mcp_code_challenge TEXT,
     mcp_code_challenge_method TEXT,
     mcp_state TEXT,
-    mcp_issuer TEXT
+    mcp_issuer TEXT,
+    google_code_verifier TEXT
 );
 """
 
@@ -183,6 +185,10 @@ def init_db() -> None:
         ):
             if name not in state_columns:
                 conn.execute(f"ALTER TABLE google_oauth_states ADD COLUMN {name} TEXT")
+        if "google_code_verifier" not in state_columns:
+            conn.execute(
+                "ALTER TABLE google_oauth_states ADD COLUMN google_code_verifier TEXT"
+            )
 
 
 def get_token(account_id: str | None = None) -> Token | None:
@@ -271,6 +277,7 @@ def save_google_oauth_state(
     account_id: str,
     callback_uri: str,
     expires_at: int,
+    google_code_verifier: str | None = None,
     pending_mcp_authorization: PendingMcpAuthorization | None = None,
 ) -> None:
     init_db()
@@ -281,9 +288,10 @@ def save_google_oauth_state(
             INSERT INTO google_oauth_states (
                 state_hash, account_id, callback_uri, expires_at, consumed_at, created_at,
                 mcp_client_id, mcp_redirect_uri, mcp_resource, mcp_code_challenge,
-                mcp_code_challenge_method, mcp_state, mcp_issuer
+                mcp_code_challenge_method, mcp_state, mcp_issuer,
+                google_code_verifier
             )
-            VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 _google_oauth_state_hash(state),
@@ -298,6 +306,7 @@ def save_google_oauth_state(
                 pending.code_challenge_method if pending else None,
                 pending.state if pending else None,
                 pending.issuer if pending else None,
+                google_code_verifier,
             ),
         )
 
@@ -310,21 +319,30 @@ def consume_google_oauth_state(
     init_db()
     now = _now()
     with _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
             """
-            UPDATE google_oauth_states
-            SET consumed_at = ?
+            SELECT account_id, callback_uri, expires_at,
+                   mcp_client_id, mcp_redirect_uri, mcp_resource,
+                   mcp_code_challenge, mcp_code_challenge_method, mcp_state,
+                   mcp_issuer, google_code_verifier
+            FROM google_oauth_states
             WHERE state_hash = ?
               AND callback_uri = ?
               AND expires_at >= ?
               AND consumed_at IS NULL
-            RETURNING account_id, callback_uri, expires_at, consumed_at,
-                      mcp_client_id, mcp_redirect_uri, mcp_resource,
-                      mcp_code_challenge, mcp_code_challenge_method, mcp_state,
-                      mcp_issuer
             """,
-            (now, _google_oauth_state_hash(state), callback_uri, now),
+            (_google_oauth_state_hash(state), callback_uri, now),
         ).fetchone()
+        if row is not None:
+            conn.execute(
+                """
+                UPDATE google_oauth_states
+                SET consumed_at = ?, google_code_verifier = NULL
+                WHERE state_hash = ?
+                """,
+                (now, _google_oauth_state_hash(state)),
+            )
         conn.execute(
             "DELETE FROM google_oauth_states WHERE expires_at < ?",
             (now,),
@@ -356,7 +374,8 @@ def consume_google_oauth_state(
         account_id=row["account_id"],
         callback_uri=row["callback_uri"],
         expires_at=row["expires_at"],
-        consumed_at=row["consumed_at"],
+        consumed_at=now,
+        google_code_verifier=row["google_code_verifier"],
         pending_mcp_authorization=pending,
     )
 
