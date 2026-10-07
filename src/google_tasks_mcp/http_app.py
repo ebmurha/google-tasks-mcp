@@ -72,6 +72,27 @@ def _hosted_html(body: str, *, status: int = 200, form_action: str | None = None
     )
 
 
+def _google_oauth_continuation(google_url: str) -> HTMLResponse:
+    escaped_url = html.escape(google_url, quote=True)
+    return HTMLResponse(
+        "<!doctype html><html lang=\"en\"><head>"
+        "<meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\">"
+        f'<meta http-equiv="refresh" content="0; url={escaped_url}">'
+        "<title>Continue to Google</title></head><body>"
+        "<p>Continuing to Google authorization.</p>"
+        f'<p><a href="{escaped_url}">Continue to Google</a></p>'
+        "</body></html>",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": (
+                "default-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+            ),
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 def resolve_bearer_token_account(token: str) -> str | None:
     settings = get_settings()
     if settings.mcp_bearer_token and hmac.compare_digest(token, settings.mcp_bearer_token):
@@ -188,10 +209,7 @@ def start_chained_google_oauth(
             ),
         )
         flow = build_authorization_flow(settings, state=state)
-        return RedirectResponse(
-            authorization_url(flow, state=state),
-            status_code=302,
-        )
+        return _google_oauth_continuation(authorization_url(flow, state=state))
     return None
 
 
