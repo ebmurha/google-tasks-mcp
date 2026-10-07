@@ -332,18 +332,14 @@ async def callback(
     code = request.query_params.get("code")
     if code:
         escaped_code = html.escape(code, quote=True)
-        body = authorization_page(
-            "Authorization code",
+        return _hosted_html(
             "<h1>Authorization complete</h1>"
             "<p>Copy this code into your terminal:</p>"
             f"<code>{escaped_code}</code>",
         )
-    else:
-        body = authorization_page(
-            "Authorization failed",
-            "<h1>Authorization failed</h1><p>No OAuth code was provided.</p>",
-        )
-    return HTMLResponse(body)
+    return _hosted_html(
+        "<h1>Authorization failed</h1><p>No OAuth code was provided.</p>",
+    )
 
 
 def _configured_path(url: str, fallback: str) -> str:

@@ -23,6 +23,16 @@ async def _account_endpoint(_request):
     return JSONResponse({"account_id": get_current_account_id()})
 
 
+def _assert_secure_html_headers(response) -> None:
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["content-security-policy"] == (
+        "default-src 'none'; style-src 'unsafe-inline'; "
+        "base-uri 'none'; frame-ancestors 'none'"
+    )
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
 def _enable_hosted_google_oauth(
     monkeypatch,
     *,
@@ -53,6 +63,18 @@ def test_callback_is_unauthenticated_and_escapes_code():
 
     assert response.status_code == 200
     assert "&lt;abc&gt;" in response.text
+    assert "<abc>" not in response.text
+    _assert_secure_html_headers(response)
+
+
+def test_callback_without_code_uses_secure_failure_page():
+    client = TestClient(create_protected_app())
+
+    response = client.get("/callback")
+
+    assert response.status_code == 200
+    assert "No OAuth code was provided." in response.text
+    _assert_secure_html_headers(response)
 
 
 def test_hosted_google_oauth_page_has_no_secret_and_uses_configured_path(
