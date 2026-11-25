@@ -1,0 +1,31 @@
+# Build ARM64 dependency wheels using the native local build platform.
+# The normal Dockerfile remains available unchanged for other deployment routes.
+FROM --platform=$BUILDPLATFORM python:3.12-slim AS dependencies
+WORKDIR /build
+COPY pyproject.toml README.md ./
+COPY src ./src
+RUN --mount=type=cache,id=google-tasks-mcp-oci-pip,target=/root/.cache/pip \
+    pip --timeout 120 wheel --no-deps --wheel-dir /wheels . \
+    && pip --timeout 120 install --target /packages \
+       --platform manylinux_2_28_aarch64 --platform manylinux2014_aarch64 \
+       --implementation cp --python-version 3.12 --abi cp312 \
+       --only-binary=:all: /wheels/*.whl
+
+FROM litestream/litestream:0.5.8 AS litestream
+FROM python:3.12-slim AS runtime
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/opt/packages \
+    PATH=/opt/packages/bin:$PATH \
+    BIND_HOST=0.0.0.0 \
+    DB_PATH=/var/lib/google-tasks-mcp/google-tasks.db
+WORKDIR /app
+COPY --from=dependencies /packages /opt/packages
+COPY --from=litestream /usr/local/bin/litestream /usr/local/bin/litestream
+COPY deploy/litestream.yml /etc/litestream.yml
+COPY --chmod=755 deploy/container-entrypoint.sh /usr/local/bin/google-tasks-mcp-entrypoint
+USER 10000:1000
+EXPOSE 8787
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["python", "-m", "google_tasks_mcp.healthcheck"]
+ENTRYPOINT ["google-tasks-mcp-entrypoint"]
