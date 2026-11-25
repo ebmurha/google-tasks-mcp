@@ -4,8 +4,9 @@ FROM --platform=$BUILDPLATFORM python:3.12-slim AS dependencies
 WORKDIR /build
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip wheel --no-deps --wheel-dir /wheels . \
-    && pip install --no-cache-dir --target /packages \
+RUN --mount=type=cache,id=google-tasks-mcp-oci-pip,target=/root/.cache/pip \
+    pip --timeout 120 wheel --no-deps --wheel-dir /wheels . \
+    && pip --timeout 120 install --target /packages \
        --platform manylinux_2_28_aarch64 --platform manylinux2014_aarch64 \
        --implementation cp --python-version 3.12 --abi cp312 \
        --only-binary=:all: /wheels/*.whl
